@@ -1,0 +1,4 @@
+Label,conditional,alpha_ann,t_alpha,p_alpha,beta,R2,NW_lags,n_obs,sig_5pct,sig_1pct
+MAHORAGA_1.1,False,0.158944,3.814,0.00014,0.3925,0.1811,9,5316,True,True
+OOS_WalkForward,False,-0.005001,-0.065,0.94852,0.6621,0.307,7,1416,False,False
+MAHORAGA_1.1_conditional,True,0.194955,3.913,9e-05,0.6975,0.3227,9,4086,True,True
