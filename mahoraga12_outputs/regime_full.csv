@@ -1,0 +1,4 @@
+Regime,VIX_source,Days,Days%,CAGR%,CAGR_bench%,Excess_CAGR%,Sharpe,MaxDD%,Hit_Rate%
+CALM (VIX<13),real,1063,20.0,68.88,72.44,-3.55,3.027,-17.96,50.8
+NORMAL (13≤VIX<24),real,3189,60.0,24.59,24.6,-0.01,1.12,-33.74,45.4
+STRESS (VIX≥24),real,1064,20.0,-20.87,-41.14,20.27,-1.439,-63.45,21.4
