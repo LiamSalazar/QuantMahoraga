@@ -164,7 +164,7 @@ class Mahoraga4Config:
         "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
         "META", "AVGO", "ASML", "TSM", "ADBE", "NFLX", "AMD"
     )
-    use_canonical_universe: bool = False   # set True when CRSP/PIT data available
+    use_canonical_universe: bool = True  
 
     bench_qqq: str = "QQQ"
     bench_spy: str = "SPY"
@@ -258,8 +258,8 @@ class Mahoraga4Config:
 
     cache_dir:      str  = "data_cache"
     random_seed:    int  = 42
-    plots_dir:      str  = "mahoraga4_plots"
-    outputs_dir:    str  = "mahoraga4_outputs"
+    plots_dir:      str  = "mahoraga4_canonical_plots"
+    outputs_dir:    str  = "mahoraga4_canonical_outputs"
     label:          str  = "MAHORAGA_4"
     parallel_sweep: bool = True   # operational optimisation only; no speed guarantee
 
@@ -2534,28 +2534,103 @@ def save_outputs(
 
 def make_plots(out, oos_r, oos_eq, fold_results, ic_df, decomp, rob, cfg,
                oos_label: str = "OOS_continuous"):
-    p = cfg.plots_dir; _ensure_dir(p)
-    res = out["res"]; eqw = out["eqw"]; mom = out["mom"]
-    plot_equity({cfg.label: res["equity"], "QQQ": res["bench"]["QQQ_eq"],
-                 "EQW": eqw["eq"], "MOM_12_1": mom["eq"]},
-                "Full Period Equity — Mahoraga 4", f"{p}/01_equity_full.png")
-    plot_equity({cfg.label: oos_eq, "QQQ (OOS)": res["bench"]["QQQ_eq"].reindex(oos_r.index)},
-                f"Walk-Forward {oos_label} — Mahoraga 4", f"{p}/02_equity_oos.png")
-    plot_drawdown({cfg.label: res["equity"], "QQQ": res["bench"]["QQQ_eq"], "MOM_12_1": mom["eq"]},
-                  "Drawdown", f"{p}/03_drawdown.png")
-    plot_wf_oos(oos_eq, res["bench"]["QQQ_eq"].reindex(oos_r.index),
-                fold_results, f"Walk-Forward OOS — {oos_label}", f"{p}/04_walkforward.png", oos_label)
-    plot_risk_overlays(res, "Risk Overlays", f"{p}/05_risk_overlays.png")
-    plot_weights_heatmap(res["weights_scaled"], "Portfolio Weights (monthly avg)", f"{p}/06_weights.png")
-    plot_ic_multi_horizon(ic_df, "Rolling IC — 1d/5d/21d", f"{p}/07_ic_multi.png")
-    plot_regime_bars(out["regime_full"], "Regime Analysis — Full", f"{p}/08_regime_full.png")
-    plot_regime_bars(out["regime_oos"],  f"Regime Analysis — {oos_label}", f"{p}/09_regime_oos.png")
-    if decomp:
-        plot_signal_decomp(decomp, res["bench"]["QQQ_r"], cfg, "Signal Decomposition", f"{p}/10_decomp.png")
-    if rob.get("sensitivity") is not None:
-        plot_sharpe_surface(rob["sensitivity"], "vol_target_ann", "weight_cap",
-                            "Sharpe Surface — vol_target × weight_cap", f"{p}/11_sensitivity.png")
+    p = cfg.plots_dir
+    _ensure_dir(p)
 
+    res = out["res"]
+    eqw = out["eqw"]
+    mom = out["mom"]
+
+    # ── FIX: rebase correcto del benchmark OOS ───────────────────────────────
+    # Antes se usaba res["bench"]["QQQ_eq"].reindex(oos_r.index), lo cual
+    # recortaba una equity curve ya "inflada" desde el full sample.
+    # Ahora se reconstruye la curva OOS desde capital_initial y solo con QQQ_r
+    # dentro de la ventana OOS.
+    qqq_oos_r = to_s(res["bench"]["QQQ_r"]).reindex(oos_r.index).fillna(0.0)
+    qqq_oos_eq = cfg.capital_initial * (1.0 + qqq_oos_r).cumprod()
+
+    plot_equity(
+        {
+            cfg.label: res["equity"],
+            "QQQ": res["bench"]["QQQ_eq"],
+            "EQW": eqw["eq"],
+            "MOM_12_1": mom["eq"],
+        },
+        "Full Period Equity — Mahoraga 4",
+        f"{p}/01_equity_full.png"
+    )
+
+    plot_equity(
+        {
+            cfg.label: oos_eq,
+            "QQQ (OOS)": qqq_oos_eq,
+        },
+        f"Walk-Forward {oos_label} — Mahoraga 4",
+        f"{p}/02_equity_oos.png"
+    )
+
+    plot_drawdown(
+        {
+            cfg.label: res["equity"],
+            "QQQ": res["bench"]["QQQ_eq"],
+            "MOM_12_1": mom["eq"],
+        },
+        "Drawdown",
+        f"{p}/03_drawdown.png"
+    )
+
+    plot_wf_oos(
+        oos_eq,
+        qqq_oos_eq,
+        fold_results,
+        f"Walk-Forward OOS — {oos_label}",
+        f"{p}/04_walkforward.png",
+        oos_label
+    )
+
+    plot_risk_overlays(res, "Risk Overlays", f"{p}/05_risk_overlays.png")
+
+    plot_weights_heatmap(
+        res["weights_scaled"],
+        "Portfolio Weights (monthly avg)",
+        f"{p}/06_weights.png"
+    )
+
+    plot_ic_multi_horizon(
+        ic_df,
+        "Rolling IC — 1d / 5d / 21d horizons",
+        f"{p}/07_ic_multi.png"
+    )
+
+    plot_regime_bars(
+        out["regime_full"],
+        "Regime Analysis — Full Period",
+        f"{p}/08_regime_full.png"
+    )
+
+    plot_regime_bars(
+        out["regime_oos"],
+        f"Regime Analysis — {oos_label}",
+        f"{p}/09_regime_oos.png"
+    )
+
+    if decomp:
+        plot_signal_decomp(
+            decomp,
+            res["bench"]["QQQ_r"],
+            cfg,
+            "Signal Decomposition",
+            f"{p}/10_decomp.png"
+        )
+
+    if rob.get("sensitivity") is not None:
+        plot_sharpe_surface(
+            rob["sensitivity"],
+            "vol_target_ann",
+            "weight_cap",
+            "Sharpe Surface — vol_target × weight_cap",
+            f"{p}/11_sensitivity.png"
+        )
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 18 — MAIN RUNNER
