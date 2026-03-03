@@ -1,0 +1,3 @@
+SR,CI_lo,CI_hi,SE,t_stat,p_val,note
+1.1549,0.7276,1.5822,0.218,5.297,0.0,Asymptotic (delta-method); underestimates SE under autocorrelation
+1.2401,0.5897,1.8906,0.3319,3.737,0.000186,Asymptotic (delta-method); underestimates SE under autocorrelation

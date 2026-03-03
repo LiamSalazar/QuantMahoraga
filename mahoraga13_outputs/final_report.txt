@@ -1,0 +1,68 @@
+MAHORAGA 1.3 — FINAL REPORT
+================================================================================
+
+═══════════════════════════════════════════════════════════════════════════════
+  METHODOLOGY DISCLAIMER — UNIVERSE BIAS
+───────────────────────────────────────────────────────────────────────────────
+  The primary universe consists of mega-cap technology stocks. Without
+  CRSP/Compustat PIT access, survivorship bias cannot be fully eliminated.
+  Results are conditional on universe design. Not evidence of generalisable
+  alpha. This is a conditional research exercise, not a trading recommendation.
+═══════════════════════════════════════════════════════════════════════════════
+
+
+OOS type: OOS_continuous
+
+FULL PERIOD SUMMARY
+----------------------------------------
+  Model: MAHORAGA_1.3
+  FinalEq: 6,887,388
+  CAGR%: 22.22
+  Vol%: 18.92
+  Sharpe: 1.155
+  Sortino: 1.945
+  MaxDD%: -21.08
+  Calmar: 1.054
+  AvgExp%: 54.3
+  TurnAnn: 7.64
+
+OOS SUMMARY
+----------------------------------------
+  Model: OOS_continuous
+  FinalEq: 809,087
+  CAGR%: 25.81
+  Vol%: 20.15
+  Sharpe: 1.240
+  Sortino: 2.104
+  MaxDD%: -21.08
+  Calmar: 1.224
+  AvgExp%: nan
+  TurnAnn: 0.00
+
+SELECTED CONFIGURATION
+----------------------------------------
+  Source: last_fold_winner
+  combo_params: {'weight_cap': 0.65, 'k_atr': 3.0, 'turb_zscore_thr': 1.5, 'turb_scale_min': 0.25, 'vol_target_ann': 0.35}
+  val_score:    0.4318
+  p_value:      0.005796
+  q_value:      0.087203
+  sig@5%FDR:    False
+  stat_label:   sig@10%_FDR_support
+  [NOTE] Does not pass BHY@5% — interpret with caution.
+
+
+  NOTE — Execution_Sensitivity_Stress evaluates performance degradation under
+  severe execution friction (cost/slippage sensitivity, panic-execution
+  penalties). It does NOT simulate realistic overnight price gaps or actual
+  market microstructure events. It is a simplified operational robustness test.
+
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  METHODOLOGY DISCLAIMER — UNIVERSE BIAS
+───────────────────────────────────────────────────────────────────────────────
+  The primary universe consists of mega-cap technology stocks. Without
+  CRSP/Compustat PIT access, survivorship bias cannot be fully eliminated.
+  Results are conditional on universe design. Not evidence of generalisable
+  alpha. This is a conditional research exercise, not a trading recommendation.
+═══════════════════════════════════════════════════════════════════════════════

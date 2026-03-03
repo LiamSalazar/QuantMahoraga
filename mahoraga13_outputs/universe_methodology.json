@@ -1,0 +1,31 @@
+{
+  "version": "1.3",
+  "universe_mode": "static_expost",
+  "static_universe": [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "AVGO",
+    "ASML",
+    "TSM",
+    "ADBE",
+    "NFLX",
+    "AMD"
+  ],
+  "universe_note": "static universe is ex-post selected mega-cap tech; not survivor-bias-free",
+  "canonical_ranking": "float_adjusted_market_cap_proxy",
+  "canonical_recon": "QS",
+  "canonical_target_n": 10,
+  "auto_entry_rank": 8,
+  "retention_rank": 10,
+  "buffer_rank": 13,
+  "min_seasoning_days": 63,
+  "min_free_float": 0.1,
+  "min_addv_usd": 50000000.0,
+  "data_source": "yfinance (simulation proxy \u2014 not CRSP/Compustat PIT)",
+  "survivorship_bias": "PRESENT \u2014 cannot be eliminated without CRSP PIT",
+  "disclaimer": "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n  METHODOLOGY DISCLAIMER \u2014 UNIVERSE BIAS\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  The primary universe consists of mega-cap technology stocks. Without\n  CRSP/Compustat PIT access, survivorship bias cannot be fully eliminated.\n  Results are conditional on universe design. Not evidence of generalisable\n  alpha. This is a conditional research exercise, not a trading recommendation.\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+}

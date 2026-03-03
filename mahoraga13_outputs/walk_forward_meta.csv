@@ -1,0 +1,2 @@
+oos_label,n_folds,oos_start,oos_end,any_partial_fold,total_oos_days,sweep_grid_combos,parallel_sweep,universe_mode
+OOS_continuous,5,2017-01-03,2026-02-19,False,2295,72,True,static_expost
