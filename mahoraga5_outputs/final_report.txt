@@ -1,0 +1,98 @@
+MAHORAGA 5 — FINAL REPORT
+================================================================================
+
+═══════════════════════════════════════════════════════════════════════════════
+  METHODOLOGY DISCLAIMER — UNIVERSE BIAS
+───────────────────────────────────────────────────────────────────────────────
+  The primary universe consists of mega-cap technology stocks selected ex post.
+  The canonical universe engine uses LiqSizeProxy (price × volume), which is a
+  liquidity-weighted size proxy — NOT float-adjusted market cap (FFMC) and NOT
+  a GICS-IT classification. Real FFMC/GICS-IT requires CRSP/Compustat PIT data,
+  which is not integrated here. Without such data, survivorship bias cannot be
+  fully eliminated. Results are conditional on universe design. Not evidence of
+  generalisable alpha. This is a conditional research exercise, not a
+  trading recommendation.
+═══════════════════════════════════════════════════════════════════════════════
+
+
+OOS type: OOS_continuous
+
+FULL PERIOD SUMMARY
+----------------------------------------
+  Model: MAHORAGA_5
+  FinalEq: 1,965,791
+  CAGR%: 15.16
+  Vol%: 18.21
+  Sharpe: 0.866
+  Sortino: 1.415
+  MaxDD%: -30.87
+  Calmar: 0.491
+  AvgExp%: 54.1
+  TurnAnn: 7.67
+
+OOS SUMMARY
+----------------------------------------
+  Model: OOS_continuous
+  FinalEq: 563,482
+  CAGR%: 20.91
+  Vol%: 20.38
+  Sharpe: 1.034
+  Sortino: 1.694
+  MaxDD%: -23.79
+  Calmar: 0.879
+  AvgExp%: nan
+  TurnAnn: 0.00
+
+OOS ML REGIME GATE SUMMARY
+----------------------------------------
+  Model: OOS_ML_RegimeGate
+  FinalEq: 333,025
+  CAGR%: 14.12
+  Vol%: 17.81
+  Sharpe: 0.831
+  Sortino: 1.320
+  MaxDD%: -23.41
+  Calmar: 0.603
+  AvgExp%: nan
+  TurnAnn: 0.00
+
+SELECTED CONFIGURATION
+----------------------------------------
+  Source:       last_fold_winner
+  combo_params: {'weight_cap': 0.55, 'k_atr': 3.0, 'turb_zscore_thr': 1.5, 'turb_scale_min': 0.4, 'vol_target_ann': 0.25}
+  val_score:    0.5485
+  p_value:      0.004976
+  q_value:      0.129929
+  sig@5%FDR:    False
+  stat_label:   econ_strong_stat_weak
+  [NOTE] Does not pass BHY@5% — interpret with caution.
+
+ML GATE FOLD SUMMARY
+----------------------------------------
+ fold model  threshold  low_scale  auc_val  brier_val  auc_test  brier_test  base_sharpe  ml_sharpe  base_cagr   ml_cagr  base_maxdd  ml_maxdd  qqq_cagr  test_days
+    1 logit       0.45       0.25 0.587475   0.247368  0.571814    0.252709       1.2590     0.9430   0.225824  0.125638   -0.116696 -0.099073  0.149415        502
+    2    gb       0.45       0.25 0.586034   0.249277  0.602168    0.243254       1.2580     1.0245   0.248317  0.180696   -0.184404 -0.152333  0.432170        505
+    3 logit       0.45       0.25 0.563025   0.266194  0.491580    0.254268       0.1642     0.1771   0.013190  0.015751   -0.237948 -0.234098 -0.075115        503
+    4    gb       0.50       0.25 0.568979   0.252932  0.524014    0.243515       2.3633     2.1364   0.756836  0.506407   -0.133391 -0.137494  0.492390        374
+    5    gb       0.45       0.25 0.606443   0.243783  0.409420    0.274707       0.1551     0.0764   0.010106 -0.002976   -0.144934 -0.130879  0.155396        411
+
+
+  NOTE — Execution_Sensitivity_Stress evaluates performance degradation under
+  severe execution friction (cost/slippage sensitivity, panic-execution
+  penalties). It does NOT simulate realistic overnight price gaps or actual
+  market microstructure events. It is a simplified operational robustness test.
+
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  METHODOLOGY DISCLAIMER — UNIVERSE BIAS
+───────────────────────────────────────────────────────────────────────────────
+  The primary universe consists of mega-cap technology stocks selected ex post.
+  The canonical universe engine uses LiqSizeProxy (price × volume), which is a
+  liquidity-weighted size proxy — NOT float-adjusted market cap (FFMC) and NOT
+  a GICS-IT classification. Real FFMC/GICS-IT requires CRSP/Compustat PIT data,
+  which is not integrated here. Without such data, survivorship bias cannot be
+  fully eliminated. Results are conditional on universe design. Not evidence of
+  generalisable alpha. This is a conditional research exercise, not a
+  trading recommendation.
+═══════════════════════════════════════════════════════════════════════════════
