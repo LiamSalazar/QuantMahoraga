@@ -164,7 +164,7 @@ class Mahoraga4Config:
         "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
         "META", "AVGO", "ASML", "TSM", "ADBE", "NFLX", "AMD"
     )
-    use_canonical_universe: bool = True   # set True when CRSP/PIT data available
+    use_canonical_universe: bool = False   # set True when CRSP/PIT data available
 
     bench_qqq: str = "QQQ"
     bench_spy: str = "SPY"
@@ -4064,6 +4064,443 @@ def run_mahoraga5(make_plots_flag: bool = True, run_robustness: bool = True) -> 
         "data_quality_report": data_quality_report,
         "asset_registry": asset_registry,
         "ml_artifacts": ml_artifacts,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 19 — MAHORAGA 5 CONSOLIDATED  (NO ML / NO IA)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class Mahoraga5Config(Mahoraga4Config):
+    """
+    Mahoraga 5 consolidates the stable Mahoraga 4 research stack and keeps:
+      - data hygiene / asset registry,
+      - canonical PIT universe schedule,
+      - walk-forward purity / audit trail,
+      - robustness suite,
+      - corrected OOS benchmark rebasing in plots.
+
+    The ML regime gate explored previously is intentionally REMOVED from the
+    execution path in this version. Mahoraga 6 is the designated version for
+    any future machine-learning module.
+    """
+    use_canonical_universe: bool = True
+    plots_dir:   str = "mahoraga5_canonical_plots"
+    outputs_dir: str = "mahoraga5_canonical_outputs"
+    label:       str = "MAHORAGA_5"
+
+    # Data hygiene / universe hardening
+    enable_data_quality_layer: bool = True
+    asset_registry_path: Optional[str] = None
+    dq_min_history_days: int = 252
+    dq_max_missing_close_pct: float = 0.10
+    dq_max_zero_volume_pct: float = 0.35
+    dq_max_stale_price_streak: int = 10
+    min_universe_names: int = 6
+
+
+def print_results(out: Dict, fold_results: List[Dict], ff, selected_config_info: Dict):
+    sep = "=" * 110
+    print(UNIVERSE_BIAS_DISCLAIMER)
+    print(f"\n{sep}\n  MAHORAGA 5 — FULL RESULTS\n{sep}")
+    oos_label = out.get("oos_label", "OOS")
+
+    print(f"\n{'─'*70}  FULL PERIOD")
+    print(pd.DataFrame([_fmt(out["full"]), _fmt(out["qqq_full"]),
+                        _fmt(out["eqw_full"]), _fmt(out["mom_full"])]).to_string(index=False))
+
+    print(f"\n{'─'*70}  OOS — {oos_label}")
+    print(pd.DataFrame([_fmt(out["oos"]), _fmt(out["qqq_oos"])]).to_string(index=False))
+
+    print(f"\n{'─'*70}  WALK-FORWARD FOLD SUMMARY")
+    fold_df = pd.DataFrame(fold_results).copy()
+    for i, row in fold_df.iterrows():
+        if row.get("is_partial"):
+            fold_df.at[i, "fold"] = f"{row['fold']} (PARTIAL)"
+    print(fold_df.to_string(index=False))
+
+    print(f"\n{'─'*70}  SELECTED CONFIGURATION (source: {selected_config_info['source']})")
+    print(f"  combo:       {selected_config_info['combo_params']}")
+    print(f"  val_score:   {selected_config_info['val_score']:.4f}")
+    print(f"  val_sharpe:  {selected_config_info.get('val_sharpe', np.nan):.4f}")
+    print(f"  p_value:     {selected_config_info['val_p_value']:.6f}")
+    print(f"  q_value:     {selected_config_info['val_q_value']:.6f}")
+    print(f"  sig@5%FDR:   {selected_config_info['val_sig_5pct']}")
+    print(f"  stat_label:  {selected_config_info['val_stat_label']}")
+    if not selected_config_info.get("val_sig_5pct"):
+        print("  [NOTE] Config does NOT pass BHY@5% — interpret with caution.")
+
+    print(f"\n{'─'*70}  ASYMPTOTIC SHARPE CI")
+    for lbl, ci in [("Full", out["sr_ci_full"]), ("OOS", out["sr_ci_oos"] )]:
+        print(f"  {lbl:6s}: SR={ci['SR']:.4f}  95%CI=[{ci['CI_lo']:.4f},{ci['CI_hi']:.4f}]  "
+              f"t={ci['t_stat']:.3f}  p={ci['p_val']:.6f}")
+
+    print(f"\n{'─'*70}  ALPHA — Newey-West HAC vs QQQ")
+    for lbl, a in [("Full", out["alpha_full"]), ("OOS", out["alpha_oos"]), ("Full|exp>0", out["alpha_cond"] )]:
+        if "error" in a:
+            print(f"  {lbl}: ERROR — {a['error']}")
+            continue
+        sig = "***" if a["sig_1pct"] else ("**" if a["sig_5pct"] else "   ")
+        cond_str = " [conditional on exposure>0]" if a.get("conditional") else ""
+        print(f"  {lbl:18s}: α={a['alpha_ann']*100:.2f}%  t={a['t_alpha']:.3f}  "
+              f"p={a['p_alpha']:.6f}  β={a['beta']:.4f}  R²={a['R2']:.4f}  "
+              f"n={a.get('n_obs','—')}  {sig}{cond_str}")
+
+    if out.get("ff_full") and "error" not in (out["ff_full"] or {}):
+        print(f"\n{'─'*70}  FF5+UMD ATTRIBUTION")
+        for lbl, fa in [("Full", out["ff_full"]), ("OOS", out["ff_oos"] )]:
+            if fa and "error" not in fa:
+                print(f"  {lbl}: α={fa['alpha_ann']*100:.2f}%  t={fa['t_alpha']:.3f}  "
+                      f"β_mkt={fa['beta_mkt']:.3f}  β_umd={fa['beta_umd']:.3f}  R²_adj={fa['R2_adj']:.3f}")
+
+    print(f"\n{'─'*70}  REGIME ANALYSIS")
+    print("  Full period:"); print(out["regime_full"].to_string(index=False))
+    print("  OOS:"); print(out["regime_oos"].to_string(index=False))
+
+    print(f"\n{'─'*70}  STRESS EPISODES")
+    print(out["stress"].to_string(index=False))
+
+    print(f"\n{'─'*70}  BOOTSTRAP DD (moving block, 1000 samples)")
+    for lbl, b in [("Full", out["boot_full"]), ("OOS", out["boot_oos"] )]:
+        print(f"  {lbl}: median_DD={b['dd_p50']*100:.1f}%  "
+              f"p5_worst={b['dd_p5_worst']*100:.1f}%  "
+              f"P(DD<-30%)={b['ruin_prob_30dd']:.1f}%  P(DD<-50%)={b['ruin_prob_50dd']:.1f}%")
+
+    print(EXECUTION_STRESS_DISCLAIMER)
+    print(UNIVERSE_BIAS_DISCLAIMER)
+
+
+def _build_final_report_text(out: Dict, fold_results: List[Dict],
+                             selected_config_info: Dict, oos_label: str) -> str:
+    lines = [
+        "MAHORAGA 5 — FINAL REPORT",
+        "=" * 80,
+        UNIVERSE_BIAS_DISCLAIMER,
+        "",
+        f"OOS type: {oos_label}",
+        "",
+        "FULL PERIOD SUMMARY",
+        "-" * 40,
+    ]
+    for k, v in _fmt(out["full"]).items():
+        lines.append(f"  {k}: {v}")
+    lines += ["", "OOS SUMMARY", "-" * 40]
+    for k, v in _fmt(out["oos"]).items():
+        lines.append(f"  {k}: {v}")
+    lines += ["", "SELECTED CONFIGURATION", "-" * 40,
+              f"  Source:       {selected_config_info['source']}",
+              f"  combo_params: {selected_config_info['combo_params']}",
+              f"  val_score:    {selected_config_info['val_score']:.4f}",
+              f"  p_value:      {selected_config_info['val_p_value']:.6f}",
+              f"  q_value:      {selected_config_info['val_q_value']:.6f}",
+              f"  sig@5%FDR:    {selected_config_info['val_sig_5pct']}",
+              f"  stat_label:   {selected_config_info['val_stat_label']}"]
+    if not selected_config_info.get("val_sig_5pct"):
+        lines.append("  [NOTE] Does not pass BHY@5% — interpret with caution.")
+    lines += ["", EXECUTION_STRESS_DISCLAIMER, "", UNIVERSE_BIAS_DISCLAIMER]
+    return "\n".join(lines)
+
+
+def save_outputs(
+    out: Dict,
+    fold_results: List[Dict],
+    ic_df: pd.DataFrame,
+    rob: Dict,
+    all_sweeps: pd.DataFrame,
+    selected_config_info: Dict,
+    oos_label: str,
+    cfg: Mahoraga5Config,
+    universe_schedule: Optional[pd.DataFrame] = None,
+    universe_snapshots: Optional[List[pd.DataFrame]] = None,
+    universe_diagnostics: Optional[pd.DataFrame] = None,
+    data_quality_report: Optional[pd.DataFrame] = None,
+    asset_registry: Optional[pd.DataFrame] = None,
+):
+    d = cfg.outputs_dir
+    _ensure_dir(d)
+    def _df(rows):
+        return pd.DataFrame([{k: round(v, 6) if isinstance(v, float) else v for k, v in r.items()} for r in rows])
+
+    _df([out["full"], out["qqq_full"], out["eqw_full"], out["mom_full"]]).to_csv(f"{d}/comparison_full.csv", index=False)
+    _df([out["oos"], out["qqq_oos"]]).to_csv(f"{d}/comparison_oos.csv", index=False)
+    pd.DataFrame(fold_results).to_csv(f"{d}/walk_forward_folds.csv", index=False)
+    pd.DataFrame(fold_results).to_csv(f"{d}/fold_diagnostics.csv", index=False)
+
+    meta = {
+        "oos_label": oos_label,
+        "n_folds": len(fold_results),
+        "oos_start": fold_results[0]["test"].split("→")[0] if fold_results else "—",
+        "oos_end": fold_results[-1]["test"].split("→")[1] if fold_results else "—",
+        "any_partial_fold": any(f.get("is_partial") for f in fold_results),
+        "total_oos_days": sum(f.get("actual_test_days", 0) for f in fold_results),
+        "sweep_grid_combos": len(list(iproduct(*[SWEEP_GRID[k] for k in SWEEP_GRID]))),
+        "parallel_sweep": cfg.parallel_sweep,
+        "universe_mode": "canonical" if cfg.use_canonical_universe else "static_expost",
+        "data_quality_layer": cfg.enable_data_quality_layer,
+        "ml_regime_gate": False,
+    }
+    pd.DataFrame([meta]).to_csv(f"{d}/walk_forward_meta.csv", index=False)
+
+    support = {
+        **selected_config_info.get("combo_params", {}),
+        "source": selected_config_info["source"],
+        "val_score": selected_config_info["val_score"],
+        "val_p_value": selected_config_info["val_p_value"],
+        "val_q_value": selected_config_info["val_q_value"],
+        "val_sig_5pct": selected_config_info["val_sig_5pct"],
+        "val_stat_label": selected_config_info["val_stat_label"],
+        "val_sharpe": selected_config_info.get("val_sharpe", np.nan),
+    }
+    pd.DataFrame([support]).to_csv(f"{d}/selected_config_support.csv", index=False)
+
+    with open(f"{d}/final_report.txt", "w", encoding="utf-8") as f:
+        f.write(_build_final_report_text(out, fold_results, selected_config_info, oos_label))
+
+    all_sweeps.to_csv(f"{d}/walk_forward_sweeps.csv", index=False)
+    out["stress"].to_csv(f"{d}/stress_full.csv", index=False)
+    out["regime_full"].to_csv(f"{d}/regime_full.csv", index=False)
+    out["regime_oos"].to_csv(f"{d}/regime_oos.csv", index=False)
+    ic_df.to_csv(f"{d}/rolling_ic_multi.csv")
+    if rob.get("exec_stress") is not None:
+        rob["exec_stress"].to_csv(f"{d}/execution_sensitivity_stress.csv", index=False)
+    if rob.get("alt_univ") is not None:
+        rob["alt_univ"].to_csv(f"{d}/alt_universes.csv", index=False)
+    if rob.get("sensitivity") is not None:
+        rob["sensitivity"].to_csv(f"{d}/local_sensitivity.csv", index=False)
+    if rob.get("stop_ablation") is not None:
+        rob["stop_ablation"].to_csv(f"{d}/stop_ablation.csv", index=False)
+    if rob.get("ic_ablation") is not None:
+        rob["ic_ablation"].to_csv(f"{d}/ic_ablation.csv", index=False)
+    pd.DataFrame([out["alpha_full"], out["alpha_oos"], out["alpha_cond"]]).to_csv(f"{d}/alpha_nw.csv", index=False)
+    pd.DataFrame([out["sr_ci_full"], out["sr_ci_oos"]]).to_csv(f"{d}/sharpe_ci.csv", index=False)
+    if out.get("ff_full"):
+        pd.DataFrame([out["ff_full"], out.get("ff_oos", {})]).to_csv(f"{d}/ff_attribution.csv", index=False)
+
+    if universe_schedule is not None:
+        universe_schedule.to_csv(f"{d}/universe_schedule.csv", index=False)
+    if universe_snapshots:
+        snap_dir = os.path.join(d, "universe_snapshots")
+        _ensure_dir(snap_dir)
+        for snap in universe_snapshots:
+            if snap is None or snap.empty:
+                continue
+            rd = str(snap["recon_date"].iloc[0]).replace("-", "")
+            snap.to_csv(f"{snap_dir}/snapshot_{rd}.csv", index=False)
+    if universe_diagnostics is not None and not universe_diagnostics.empty:
+        universe_diagnostics.to_csv(f"{d}/universe_diagnostics.csv", index=False)
+    if data_quality_report is not None and not data_quality_report.empty:
+        data_quality_report.to_csv(f"{d}/data_quality_report.csv", index=False)
+    if asset_registry is not None and not asset_registry.empty:
+        asset_registry.to_csv(f"{d}/asset_registry.csv", index=False)
+
+    universe_cfg = UniverseConfig()
+    methodology = {
+        "version": "5.0",
+        "universe_mode": "canonical_engine" if cfg.use_canonical_universe else "static_expost",
+        "static_universe": list(cfg.universe_static),
+        "universe_note": "static universe is ex-post selected mega-cap tech; not survivor-bias-free",
+        "canonical_ranking": "LiqSizeProxy = mean(price × volume, 30d) — NOT float-adjusted market cap (FFMC)",
+        "canonical_ranking_note": "FFMC/GICS-IT require CRSP/Compustat PIT data, which is not integrated",
+        "canonical_recon": universe_cfg.recon_freq,
+        "canonical_target_n": universe_cfg.target_size,
+        "auto_entry_rank": universe_cfg.auto_entry_rank,
+        "retention_rank": universe_cfg.retention_rank,
+        "buffer_rank": universe_cfg.buffer_rank,
+        "min_seasoning_days": universe_cfg.min_seasoning_days,
+        "min_free_float_proxy": "volume_continuity (fraction of days with non-zero vol) — NOT actual float data",
+        "min_addv_usd": universe_cfg.min_addv_usd,
+        "data_source": "yfinance (simulation proxy — not CRSP/Compustat PIT)",
+        "survivorship_bias": "PRESENT — cannot be eliminated without CRSP PIT",
+        "data_quality_layer": cfg.enable_data_quality_layer,
+        "ml_regime_gate": False,
+        "disclaimer": UNIVERSE_BIAS_DISCLAIMER.strip(),
+    }
+    with open(f"{d}/universe_methodology.json", "w", encoding="utf-8") as f:
+        json.dump(methodology, f, indent=2)
+
+    print(f"\n  [outputs → ./{d}/]")
+    print("    comparison_full.csv, comparison_oos.csv, walk_forward_folds.csv, fold_diagnostics.csv")
+    print("    walk_forward_meta.csv, selected_config_support.csv, final_report.txt, walk_forward_sweeps.csv")
+    print("    universe_schedule.csv, universe_diagnostics.csv, data_quality_report.csv, asset_registry.csv")
+
+
+def make_plots(out, oos_r, oos_eq, fold_results, ic_df, decomp, rob, cfg,
+               oos_label: str = "OOS_continuous"):
+    p = cfg.plots_dir
+    _ensure_dir(p)
+    res = out["res"]
+    eqw = out["eqw"]
+    mom = out["mom"]
+
+    plot_equity({cfg.label: res["equity"], "QQQ": res["bench"]["QQQ_eq"], "EQW": eqw["eq"], "MOM_12_1": mom["eq"]},
+                "Full Period Equity — Mahoraga 5", f"{p}/01_equity_full.png")
+
+    qqq_oos_r = res["bench"]["QQQ_r"].reindex(oos_r.index).fillna(0.0)
+    qqq_oos_eq = cfg.capital_initial * (1.0 + qqq_oos_r).cumprod()
+    plot_equity({cfg.label: oos_eq, "QQQ (OOS)": qqq_oos_eq},
+                f"Walk-Forward {oos_label} — Mahoraga 5", f"{p}/02_equity_oos.png")
+
+    plot_drawdown({cfg.label: res["equity"], "QQQ": res["bench"]["QQQ_eq"], "MOM_12_1": mom["eq"]},
+                  "Drawdown", f"{p}/03_drawdown.png")
+    plot_wf_oos(oos_eq, qqq_oos_eq, fold_results,
+                f"Walk-Forward OOS — {oos_label}", f"{p}/04_walkforward.png", oos_label)
+    plot_risk_overlays(res, "Risk Overlays", f"{p}/05_risk_overlays.png")
+    plot_weights_heatmap(res["weights_scaled"], "Portfolio Weights (monthly avg)", f"{p}/06_weights.png")
+    plot_ic_multi_horizon(ic_df, "Rolling IC — 1d/5d/21d", f"{p}/07_ic_multi.png")
+    plot_regime_bars(out["regime_full"], "Regime Analysis — Full", f"{p}/08_regime_full.png")
+    plot_regime_bars(out["regime_oos"], f"Regime Analysis — {oos_label}", f"{p}/09_regime_oos.png")
+    if decomp:
+        plot_signal_decomp(decomp, res["bench"]["QQQ_r"], cfg, "Signal Decomposition", f"{p}/10_decomp.png")
+    if rob.get("sensitivity") is not None:
+        plot_sharpe_surface(rob["sensitivity"], "vol_target_ann", "weight_cap",
+                            "Sharpe Surface — vol_target × weight_cap", f"{p}/11_sensitivity.png")
+
+
+def run_mahoraga5(make_plots_flag: bool = True, run_robustness: bool = True) -> Dict:
+    print("=" * 80)
+    print("  MAHORAGA 5 — Research Edition")
+    print("=" * 80)
+    print(UNIVERSE_BIAS_DISCLAIMER)
+
+    cfg = Mahoraga5Config()
+    costs = CostsConfig()
+    ucfg = UniverseConfig()
+    _ensure_dir(cfg.cache_dir)
+    _ensure_dir(cfg.plots_dir)
+    _ensure_dir(cfg.outputs_dir)
+
+    print("\n[1] Downloading data …")
+    equity_tickers = sorted(set(list(cfg.universe_static) + [t for u in ALTERNATE_UNIVERSES.values() for t in u]))
+    bench_tickers = [cfg.bench_qqq, cfg.bench_spy, cfg.bench_vix]
+    all_tickers = sorted(set(equity_tickers + bench_tickers))
+    ohlcv = download_ohlcv(all_tickers, cfg.data_start, cfg.data_end, cfg.cache_dir)
+
+    print("\n[1b] Fama-French factors …")
+    ff = load_ff_factors(cfg.cache_dir)
+
+    print("\n[1c] Data hygiene & asset registry …")
+    asset_registry = build_asset_registry(equity_tickers, cfg, bench_tickers)
+    data_quality_report = compute_data_quality_report(ohlcv, equity_tickers, cfg)
+    clean_equity = filter_equity_candidates([t for t in equity_tickers if t in ohlcv["close"].columns],
+                                            asset_registry, data_quality_report, cfg)
+    print(f"  [dq] raw equity candidates:   {len([t for t in equity_tickers if t in ohlcv['close'].columns])}")
+    print(f"  [dq] clean equity candidates: {len(clean_equity)}")
+    if len(clean_equity) < cfg.min_universe_names:
+        print("  [dq] WARNING: too few clean names after quality filters; reverting to raw equity candidates")
+        clean_equity = [t for t in equity_tickers if t in ohlcv["close"].columns]
+
+    universe_schedule = None
+    universe_snapshots = None
+    universe_diagnostics = pd.DataFrame()
+    if cfg.use_canonical_universe:
+        print("\n[1d] Canonical universe engine (quarterly LiqSizeProxy reconstitution) …")
+        print(f"  [universe] tickers_in_scope = {len(clean_equity)} clean equity candidates (benchmarks excluded)")
+        universe_schedule, universe_snapshots = build_canonical_universe_schedule(
+            ohlcv["close"], ohlcv["volume"], ucfg, clean_equity,
+            cfg.data_start, cfg.data_end,
+            registry_df=asset_registry, quality_df=data_quality_report,
+        )
+        universe_diagnostics = build_universe_diagnostics(universe_schedule)
+        n_recon = len(universe_schedule)
+        print(f"  [universe] {n_recon} reconstitution dates built")
+        if n_recon > 0:
+            first_u = json.loads(universe_schedule.iloc[0]["members"])
+            last_u = json.loads(universe_schedule.iloc[-1]["members"])
+            print(f"  [universe] first recon ({universe_schedule.iloc[0]['recon_date']}): {first_u}")
+            print(f"  [universe] last  recon ({universe_schedule.iloc[-1]['recon_date']}): {last_u}")
+        print("  [universe] Schedule governs backtest point-in-time at each rebalance.")
+    else:
+        print("\n[1d] *** WARNING: use_canonical_universe=False ***")
+        print("     Running on static ex-post universe. Survivorship bias is PRESENT.")
+        print(f"     Static universe: {list(cfg.universe_static)}")
+
+    print("\n[2] Walk-forward …")
+    oos_r, oos_eq, fold_results, all_sweeps, oos_label, selected_config_info = \
+        run_walk_forward(ohlcv, cfg, costs, universe_schedule=universe_schedule)
+
+    oos_summary = summarize(oos_r, oos_eq, None, None, cfg, oos_label)
+    print(f"\n  OOS type:   {oos_label}")
+    print(f"  OOS Sharpe={oos_summary['Sharpe']:.3f}  CAGR={oos_summary['CAGR']*100:.1f}%  MaxDD={oos_summary['MaxDD']*100:.1f}%")
+
+    print("\n[3] Applying last-fold winning combo as final config …")
+    last_train_end = cfg.wf_folds[-1][0]
+    cfg_final = deepcopy(cfg)
+    qqq_full = to_s(ohlcv["close"][cfg.bench_qqq].ffill())
+    dd_thr, vol_thr = calibrate_crisis_thresholds(qqq_full, cfg.wf_train_start, last_train_end, cfg_final)
+    cfg_final.crisis_dd_thr = dd_thr
+    cfg_final.crisis_vol_zscore_thr = vol_thr
+    for k, v in selected_config_info["combo_params"].items():
+        setattr(cfg_final, k, v)
+
+    final_train_tickers = get_training_universe(last_train_end, universe_schedule,
+                                                cfg.universe_static, list(ohlcv["close"].columns))
+    close_univ = ohlcv["close"][final_train_tickers]
+    wt, wm, wr = fit_ic_weights(close_univ, qqq_full.loc[cfg.wf_train_start:last_train_end], cfg_final,
+                                cfg.wf_train_start, last_train_end)
+    cfg_final.w_trend = wt
+    cfg_final.w_mom = wm
+    cfg_final.w_rel = wr
+
+    print(f"\n  Final config: {selected_config_info['combo_params']}")
+    print(f"  Statistical support (last fold): p={selected_config_info['val_p_value']:.6f}  q={selected_config_info['val_q_value']:.6f}  sig@5%={selected_config_info['val_sig_5pct']}  label={selected_config_info['val_stat_label']}")
+
+    print("\n[4] Full evaluation …")
+    out = final_evaluation(ohlcv, cfg_final, costs, ff, oos_r, oos_eq, oos_label,
+                           universe_schedule=universe_schedule)
+
+    print("\n[5] Rolling IC (1d/5d/21d) …")
+    ic_df = rolling_ic_multi_horizon(close_univ, qqq_full, cfg_final, window=63)
+
+    print("\n[6] Signal decomposition …")
+    decomp = baseline_signal_decomp(ohlcv, cfg_final, costs,
+                                    universe_schedule=universe_schedule)
+
+    rob = {}
+    if run_robustness:
+        print("\n[7a] Execution_Sensitivity_Stress …")
+        print(EXECUTION_STRESS_DISCLAIMER)
+        rob["exec_stress"] = execution_sensitivity_stress(ohlcv, cfg_final, costs,
+                                                          universe_schedule=universe_schedule)
+        print("\n[7b] Alternate universes …")
+        rob["alt_univ"] = alternate_universe_stress(ohlcv, cfg_final, costs)
+        print("\n[7c] Local parameter sensitivity …")
+        rob["sensitivity"] = local_sensitivity(ohlcv, cfg_final, costs,
+                                               universe_schedule=universe_schedule)
+        print("\n[7d] Stop ablation …")
+        rob["stop_ablation"] = stop_keep_cash_ablation(ohlcv, cfg_final, costs,
+                                                        universe_schedule=universe_schedule)
+        print("\n[7e] IC weight ablation …")
+        rob["ic_ablation"] = ic_weight_ablation(ohlcv, cfg_final, costs,
+                                                 universe_schedule=universe_schedule)
+
+    print_results(out, fold_results, ff, selected_config_info)
+    save_outputs(out, fold_results, ic_df, rob, all_sweeps, selected_config_info,
+                 oos_label, cfg_final, universe_schedule=universe_schedule,
+                 universe_snapshots=universe_snapshots,
+                 universe_diagnostics=universe_diagnostics,
+                 data_quality_report=data_quality_report,
+                 asset_registry=asset_registry)
+
+    if make_plots_flag:
+        print("\n[8] Generating plots …")
+        make_plots(out, oos_r, oos_eq, fold_results, ic_df, decomp, rob, cfg_final, oos_label)
+
+    return {
+        "cfg": cfg_final,
+        "out": out,
+        "oos_r": oos_r,
+        "oos_eq": oos_eq,
+        "oos_label": oos_label,
+        "fold_results": fold_results,
+        "ic_df": ic_df,
+        "decomp": decomp,
+        "rob": rob,
+        "selected_config_info": selected_config_info,
+        "universe_schedule": universe_schedule,
+        "universe_diagnostics": universe_diagnostics,
+        "data_quality_report": data_quality_report,
+        "asset_registry": asset_registry,
     }
 
 
