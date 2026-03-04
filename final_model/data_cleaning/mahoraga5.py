@@ -164,7 +164,7 @@ class Mahoraga4Config:
         "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
         "META", "AVGO", "ASML", "TSM", "ADBE", "NFLX", "AMD"
     )
-    use_canonical_universe: bool = False   # set True when CRSP/PIT data available
+    use_canonical_universe: bool = True   # set True when CRSP/PIT data available
 
     bench_qqq: str = "QQQ"
     bench_spy: str = "SPY"
