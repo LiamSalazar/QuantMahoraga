@@ -4,7 +4,7 @@
 ║   Long-Only Weekly-Rebalanced Tech Rotation — Research Edition               ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║
-║  Changes from 1.2 → 1.3                                                      ║
+║                                                      ║
 ║  ─────────────────────────────────────────────────────────────────────────   ║
 ║  [WALK-FORWARD — OOS purity guarantees (stable)]                              ║
 ║  · 5-tuple explicit fold boundaries: (train_end, val_start, val_end,         ║
