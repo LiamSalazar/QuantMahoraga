@@ -2711,11 +2711,11 @@ def run_mahoraga4(make_plots_flag: bool = True, run_robustness: bool = True) -> 
 
     # ── [2] Walk-forward (explicit boundaries, OOS purity asserted) ───────────
     print("\n[2] Walk-forward …")
-    oos_r, oos_eq, fold_results, all_sweeps, oos_label, selected_config_info = \
+    oos_r, oos_eq, oos_exp, oos_to, fold_results, all_sweeps, oos_label, selected_config_info = \
         run_walk_forward(ohlcv, cfg, costs, universe_schedule=universe_schedule)
 
 
-    oos_summary = summarize(oos_r, oos_eq, None, None, cfg, oos_label)
+    oos_summary = summarize(oos_r, oos_eq, oos_exp, oos_to, cfg, oos_label)
     print(f"\n  OOS type:   {oos_label}")
     print(f"  OOS Sharpe={oos_summary['Sharpe']:.3f}  "
           f"CAGR={oos_summary['CAGR']*100:.1f}%  MaxDD={oos_summary['MaxDD']*100:.1f}%")
@@ -2758,7 +2758,7 @@ def run_mahoraga4(make_plots_flag: bool = True, run_robustness: bool = True) -> 
 
     # ── [4] Full evaluation ───────────────────────────────────────────────────
     print("\n[4] Full evaluation …")
-    out = final_evaluation(ohlcv, cfg_final, costs, ff, oos_r, oos_eq, oos_label,
+    out = final_evaluation(ohlcv, cfg_final, costs, ff, oos_r, oos_eq, oos_exp, oos_to, oos_label,
                            universe_schedule=universe_schedule)
 
     # ── [5] Rolling IC ────────────────────────────────────────────────────────
@@ -4132,7 +4132,7 @@ def make_plots(out, oos_r, oos_eq, fold_results, ic_df, decomp, rob, cfg,
                             "Sharpe Surface — vol_target × weight_cap", f"{p}/11_sensitivity.png")
 
 
-def run_mahoraga6(make_plots_flag: bool = True, run_robustness: bool = True) -> Dict:
+def run_mahoraga5(make_plots_flag: bool = True, run_robustness: bool = True) -> Dict:
     print("=" * 80)
     print("  MAHORAGA 5 — Research Edition")
     print("=" * 80)
@@ -4191,9 +4191,9 @@ def run_mahoraga6(make_plots_flag: bool = True, run_robustness: bool = True) -> 
         print(f"     Static universe: {list(cfg.universe_static)}")
 
     print("\n[2] Walk-forward …")
-    oos_r, oos_eq, fold_results, all_sweeps, oos_label, selected_config_info = \
+    oos_r, oos_eq, oos_exp, oos_to, fold_results, all_sweeps, oos_label, selected_config_info = \
         run_walk_forward(ohlcv, cfg, costs, universe_schedule=universe_schedule)
-    oos_summary = summarize(oos_r, oos_eq, None, None, cfg, oos_label)
+    oos_summary = summarize(oos_r, oos_eq, oos_exp, oos_to, cfg, oos_label)
     print(f"\n  OOS type:   {oos_label}")
     print(f"  OOS Sharpe={oos_summary['Sharpe']:.3f}  CAGR={oos_summary['CAGR']*100:.1f}%  MaxDD={oos_summary['MaxDD']*100:.1f}%")
 
@@ -4219,7 +4219,7 @@ def run_mahoraga6(make_plots_flag: bool = True, run_robustness: bool = True) -> 
     print(f"  Statistical support (last fold): p={selected_config_info['val_p_value']:.6f}  q={selected_config_info['val_q_value']:.6f}  sig@5%={selected_config_info['val_sig_5pct']}  label={selected_config_info['val_stat_label']}")
 
     print("\n[4] Full evaluation …")
-    out = final_evaluation(ohlcv, cfg_final, costs, ff, oos_r, oos_eq, oos_label, universe_schedule=universe_schedule)
+    out = final_evaluation(ohlcv, cfg_final, costs, ff, oos_r, oos_eq, oos_exp, oos_to, oos_label, universe_schedule=universe_schedule)
 
     print("\n[5] Rolling IC (1d/5d/21d) …")
     ic_df = rolling_ic_multi_horizon(close_univ, qqq_full, cfg_final, window=63)
@@ -4756,7 +4756,7 @@ def run_mahoraga6(make_plots_flag: bool = True, run_robustness: bool = True) -> 
     print(f"  Statistical support (last fold): p={selected_config_info['val_p_value']:.6f}  q={selected_config_info['val_q_value']:.6f}  sig@5%={selected_config_info['val_sig_5pct']}  label={selected_config_info['val_stat_label']}")
 
     print("\n[4] Full evaluation …")
-    out = final_evaluation(ohlcv, cfg_final, costs, ff, oos_r, oos_eq, oos_label,
+    out = final_evaluation(ohlcv, cfg_final, costs, ff, oos_r, oos_eq, oos_exp, oos_to, oos_label,
                            universe_schedule=universe_schedule)
 
     print("\n[5] Rolling IC (1d/5d/21d) …")
@@ -4784,8 +4784,8 @@ def run_mahoraga6(make_plots_flag: bool = True, run_robustness: bool = True) -> 
         rob["ic_ablation"] = ic_weight_ablation(ohlcv, cfg_final, costs,
                                                  universe_schedule=universe_schedule)
 
-    print("\n[7f] Correlation Shield ablation …")
-    rob["corr_ablation"] = corr_shield_ablation(ohlcv, cfg_final, costs,
+        print("\n[7f] Correlation Shield ablation …")
+        rob["corr_ablation"] = corr_shield_ablation(ohlcv, cfg_final, costs,
                                                    universe_schedule=universe_schedule)
 
     print_results(out, fold_results, ff, selected_config_info)
@@ -4822,6 +4822,8 @@ def run_mahoraga6(make_plots_flag: bool = True, run_robustness: bool = True) -> 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Backward-compatible alias
+run_mahoraga5 = run_mahoraga6
 # ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
 
