@@ -1,0 +1,121 @@
+MAHORAGA 6 — FINAL REPORT
+================================================================================
+
+═══════════════════════════════════════════════════════════════════════════════
+  METHODOLOGY DISCLAIMER — UNIVERSE BIAS
+───────────────────────────────────────────────────────────────────────────────
+  The primary universe consists of mega-cap technology stocks selected ex post.
+  The canonical universe engine uses LiqSizeProxy (price × volume), which is a
+  liquidity-weighted size proxy — NOT float-adjusted market cap (FFMC) and NOT
+  a GICS-IT classification. Real FFMC/GICS-IT requires CRSP/Compustat PIT data,
+  which is not integrated here. Without such data, survivorship bias cannot be
+  fully eliminated. Results are conditional on universe design. Not evidence of
+  generalisable alpha. This is a conditional research exercise, not a
+  trading recommendation.
+═══════════════════════════════════════════════════════════════════════════════
+
+
+OOS type: OOS_continuous
+
+FULL PERIOD SUMMARY
+----------------------------------------
+  Model: MAHORAGA_6
+  FinalEq: 1,958,442
+  CAGR%: 15.14
+  Vol%: 18.18
+  Sharpe: 0.866
+  Sortino: 1.416
+  MaxDD%: -30.70
+  Calmar: 0.493
+  AvgExp%: 54.0
+  TurnAnn: 7.68
+
+OOS SUMMARY
+----------------------------------------
+  Model: OOS_continuous
+  FinalEq: 556,670
+  CAGR%: 20.75
+  Vol%: 20.32
+  Sharpe: 1.029
+  Sortino: 1.686
+  MaxDD%: -23.94
+  Calmar: 0.867
+  AvgExp%: 53.9
+  TurnAnn: 8.04
+
+OOS BASELINES
+----------------------------------------
+  [qqq_oos]
+    Model: QQQ
+    FinalEq: 531,822
+    CAGR%: 20.14
+    Vol%: 22.85
+    Sharpe: 0.918
+    Sortino: 1.456
+    MaxDD%: -35.24
+    Calmar: 0.572
+    AvgExp%: 100.0
+    TurnAnn: 0.00
+  [eqw_oos]
+    Model: EQW_Tech_OOS
+    FinalEq: 899,366
+    CAGR%: 27.28
+    Vol%: 30.92
+    Sharpe: 0.935
+    Sortino: 1.514
+    MaxDD%: -55.48
+    Calmar: 0.492
+    AvgExp%: 100.0
+    TurnAnn: 0.16
+  [mom_oos]
+    Model: MOM_12_1_TopK_OOS
+    FinalEq: 1,118,426
+    CAGR%: 30.36
+    Vol%: 39.83
+    Sharpe: 0.865
+    Sortino: 1.431
+    MaxDD%: -53.50
+    Calmar: 0.567
+    AvgExp%: 100.0
+    TurnAnn: 4.68
+
+CORRELATION SHIELD (v6)
+----------------------------------------
+  enabled: True
+  corr_window: 21
+  rho_in / rho_out: 0.75 / 0.65
+  gamma: 2.0
+  hard_kill: True  hard_rho: 0.9
+  vix_confirm: False  vix_thr: 24.0
+
+SELECTED CONFIGURATION
+----------------------------------------
+  Source:       last_fold_winner
+  combo_params: {'weight_cap': 0.55, 'k_atr': 3.0, 'turb_zscore_thr': 1.5, 'turb_scale_min': 0.4, 'vol_target_ann': 0.25}
+  val_score:    0.5484654093028679
+  p_value:      0.004976
+  q_value:      0.129929
+  sig@5%FDR:    False
+  stat_label:   econ_strong_stat_weak
+  [NOTE] Does not pass BHY@5% — interpret with caution.
+
+
+  NOTE — Execution_Sensitivity_Stress evaluates performance degradation under
+  severe execution friction (cost/slippage sensitivity, panic-execution
+  penalties). It does NOT simulate realistic overnight price gaps or actual
+  market microstructure events. It is a simplified operational robustness test.
+
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  METHODOLOGY DISCLAIMER — UNIVERSE BIAS
+───────────────────────────────────────────────────────────────────────────────
+  The primary universe consists of mega-cap technology stocks selected ex post.
+  The canonical universe engine uses LiqSizeProxy (price × volume), which is a
+  liquidity-weighted size proxy — NOT float-adjusted market cap (FFMC) and NOT
+  a GICS-IT classification. Real FFMC/GICS-IT requires CRSP/Compustat PIT data,
+  which is not integrated here. Without such data, survivorship bias cannot be
+  fully eliminated. Results are conditional on universe design. Not evidence of
+  generalisable alpha. This is a conditional research exercise, not a
+  trading recommendation.
+═══════════════════════════════════════════════════════════════════════════════
