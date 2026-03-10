@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                        MAHORAGA  1.3                                         ║
+║                        MAHORAGA  6                                         ║
 ║   Long-Only Weekly-Rebalanced Tech Rotation — Research Edition               ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║
@@ -157,7 +157,7 @@ class UniverseConfig:
 
 
 @dataclass
-class Mahoraga4Config:
+class Mahoraga6Config:
     # ── Static fallback universe (used when canonical engine data unavailable) ─
     # Labelled explicitly as ex-post selected; disclaimer always printed
     universe_static: Tuple[str, ...] = (
@@ -258,10 +258,18 @@ class Mahoraga4Config:
 
     cache_dir:      str  = "data_cache"
     random_seed:    int  = 42
-    plots_dir:      str  = "mahoraga4_plots"
-    outputs_dir:    str  = "mahoraga4_outputs"
-    label:          str  = "MAHORAGA_4"
+    plots_dir:      str  = "mahoraga6_plots"
+    outputs_dir:    str  = "mahoraga6_outputs"
+    label:          str  = "MAHORAGA_6"
     parallel_sweep: bool = True   # operational optimisation only; no speed guarantee
+    # ── joblib settings (operational only; affects speed/robustness) ───────────
+    # Windows default uses threads to avoid large tempfiles/pickles in %TEMP%.
+    joblib_backend: str = ("threading" if os.name == "nt" else "loky")
+    # -1 => joblib default; on Windows+threads it will be capped at 8 internally.
+    joblib_n_jobs: int = -1
+    # Optional folder for joblib temp files when using loky/memmapping (e.g., "D:/joblib_tmp")
+    joblib_temp_folder: Optional[str] = None
+
 
 
 ALTERNATE_UNIVERSES: Dict[str, Tuple[str, ...]] = {
@@ -650,7 +658,7 @@ def get_training_universe(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def build_contiguous_folds(
-    cfg:         Mahoraga4Config,
+    cfg:         Mahoraga6Config,
     trading_idx: pd.DatetimeIndex,
 ) -> List[Dict]:
     """
@@ -916,7 +924,7 @@ def hrp_weights(returns: pd.DataFrame) -> pd.Series:
 # SECTION 7 — SIGNALS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _trend(price: pd.Series, cfg: Mahoraga4Config) -> pd.Series:
+def _trend(price: pd.Series, cfg: Mahoraga6Config) -> pd.Series:
     votes = []
     for sp in cfg.spans_short:
         for lp in cfg.spans_long:
@@ -926,11 +934,11 @@ def _trend(price: pd.Series, cfg: Mahoraga4Config) -> pd.Series:
             votes.append(((es > el) & price.notna()).astype(float))
     return (sum(votes) / len(votes)) if votes else pd.Series(0.0, index=price.index)
 
-def _mom(price: pd.Series, cfg: Mahoraga4Config) -> pd.Series:
+def _mom(price: pd.Series, cfg: Mahoraga6Config) -> pd.Series:
     raw = sum((price / price.shift(w) - 1.0).shift(1) for w in cfg.mom_windows) / len(cfg.mom_windows)
     return (raw.clip(-1.0, 1.0) + 1.0) / 2.0
 
-def _rel(price: pd.Series, bench: pd.Series, cfg: Mahoraga4Config) -> pd.Series:
+def _rel(price: pd.Series, bench: pd.Series, cfg: Mahoraga6Config) -> pd.Series:
     raw = sum(
         (price / price.shift(w) - 1.0).shift(1) - (bench / bench.shift(w) - 1.0).shift(1)
         for w in cfg.rel_windows
@@ -941,7 +949,7 @@ def _rel(price: pd.Series, bench: pd.Series, cfg: Mahoraga4Config) -> pd.Series:
 def fit_ic_weights(
     close:       pd.DataFrame,
     qqq:         pd.Series,
-    cfg:         Mahoraga4Config,
+    cfg:         Mahoraga6Config,
     train_start: str,
     train_end:   str,
     horizons:    Tuple[int, ...] = (1, 5, 21),
@@ -991,7 +999,7 @@ def fit_ic_weights(
     return float(w[0]), float(w[1]), float(w[2])
 
 
-def compute_scores(close: pd.DataFrame, qqq: pd.Series, cfg: Mahoraga4Config) -> pd.DataFrame:
+def compute_scores(close: pd.DataFrame, qqq: pd.Series, cfg: Mahoraga6Config) -> pd.DataFrame:
     idx  = close.index
     qqq_ = to_s(qqq, "QQQ").reindex(idx).ffill()
     sc   = pd.DataFrame(index=idx, columns=close.columns, dtype=float)
@@ -1006,7 +1014,7 @@ def compute_scores(close: pd.DataFrame, qqq: pd.Series, cfg: Mahoraga4Config) ->
 def rolling_ic_multi_horizon(
     close:   pd.DataFrame,
     qqq:     pd.Series,
-    cfg:     Mahoraga4Config,
+    cfg:     Mahoraga6Config,
     window:  int = 63,
     horizons: Tuple[int, ...] = (1, 5, 21),
 ) -> pd.DataFrame:
@@ -1059,7 +1067,7 @@ def apply_chandelier(
     close:   pd.DataFrame,
     high:    pd.DataFrame,
     low:     pd.DataFrame,
-    cfg:     Mahoraga4Config,
+    cfg:     Mahoraga6Config,
 ) -> Tuple[pd.DataFrame, int]:
     if not cfg.stop_on:
         return weights.copy(), 0
@@ -1096,7 +1104,7 @@ def calibrate_crisis_thresholds(
     qqq_close:   pd.Series,
     train_start: str,
     train_end:   str,
-    cfg:         Mahoraga4Config,
+    cfg:         Mahoraga6Config,
 ) -> Tuple[float, float]:
     p_tr = to_s(qqq_close.loc[train_start:train_end]).ffill()
     r_tr = p_tr.pct_change().fillna(0.0)
@@ -1114,7 +1122,7 @@ def calibrate_crisis_thresholds(
 
 def compute_crisis_gate(
     qqq_close: pd.Series,
-    cfg:       Mahoraga4Config,
+    cfg:       Mahoraga6Config,
 ) -> Tuple[pd.Series, pd.Series]:
     p   = to_s(qqq_close, "QQQ").ffill(); idx = p.index
     r   = p.pct_change().fillna(0.0)
@@ -1140,7 +1148,7 @@ def compute_turbulence(
     close:  pd.DataFrame,
     volume: pd.DataFrame,
     qqq:    pd.Series,
-    cfg:    Mahoraga4Config,
+    cfg:    Mahoraga6Config,
 ) -> pd.Series:
     idx   = close.index
     qqq_r = to_s(qqq, "QQQ").reindex(idx).ffill().pct_change().fillna(0.0)
@@ -1170,7 +1178,7 @@ def compute_turbulence(
     return s
 
 
-def vol_target_scale(port_r: pd.Series, cfg: Mahoraga4Config) -> pd.Series:
+def vol_target_scale(port_r: pd.Series, cfg: Mahoraga6Config) -> pd.Series:
     if not cfg.vol_target_on:
         return pd.Series(1.0, index=port_r.index)
     rv = to_s(port_r).fillna(0.0).rolling(cfg.port_vol_window).std() * np.sqrt(cfg.trading_days)
@@ -1192,9 +1200,9 @@ def _costs(w: pd.DataFrame, c: CostsConfig) -> Tuple[pd.Series, pd.Series]:
 
 def backtest(
     ohlcv:             Dict[str, pd.DataFrame],
-    cfg:               Mahoraga4Config,
+    cfg:               Mahoraga6Config,
     costs:             CostsConfig,
-    label:             str = "MAHORAGA_4",
+    label:          str  = "MAHORAGA_6",
     universe:          Optional[List[str]] = None,
     universe_schedule: Optional[pd.DataFrame] = None,
 ) -> Dict:
@@ -1336,7 +1344,7 @@ def validate_no_lookahead(res: Dict, label: str = ""):
 # SECTION 10 — METRICS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def summarize(r, eq, exp, to, cfg: Mahoraga4Config, label="") -> Dict:
+def summarize(r, eq, exp, to, cfg: Mahoraga6Config, label="") -> Dict:
     r    = to_s(r).replace([np.inf,-np.inf], np.nan).dropna()
     eq   = to_s(eq).dropna()
     exp_ = to_s(exp).reindex(r.index).fillna(0.0) if exp is not None else pd.Series(np.nan, index=r.index)
@@ -1360,7 +1368,7 @@ def summarize(r, eq, exp, to, cfg: Mahoraga4Config, label="") -> Dict:
     }
 
 
-def asymptotic_sharpe_ci(r: pd.Series, cfg: Mahoraga4Config, alpha: float = 0.05) -> Dict:
+def asymptotic_sharpe_ci(r: pd.Series, cfg: Mahoraga6Config, alpha: float = 0.05) -> Dict:
     r    = to_s(r).dropna(); T = len(r)
     rf_d = (1.0 + cfg.rf_annual) ** (1.0 / cfg.trading_days) - 1.0
     ex   = r - rf_d
@@ -1378,7 +1386,7 @@ def asymptotic_sharpe_ci(r: pd.Series, cfg: Mahoraga4Config, alpha: float = 0.05
     }
 
 
-def alpha_test_nw(r_s, r_b, cfg: Mahoraga4Config, label: str = "",
+def alpha_test_nw(r_s, r_b, cfg: Mahoraga6Config, label: str = "",
                   conditional: bool = False, exposure: Optional[pd.Series] = None) -> Dict:
     r_s = to_s(r_s).dropna()
     r_b = to_s(r_b).reindex(r_s.index).fillna(0.0)
@@ -1408,7 +1416,7 @@ def alpha_test_nw(r_s, r_b, cfg: Mahoraga4Config, label: str = "",
         return {"Label": label, "error": str(e)}
 
 
-def factor_attribution(r_s, ff, cfg: Mahoraga4Config, label="") -> Optional[Dict]:
+def factor_attribution(r_s, ff, cfg: Mahoraga6Config, label="") -> Optional[Dict]:
     if ff is None: return None
     r   = to_s(r_s).dropna()
     ff_ = ff.reindex(r.index).dropna()
@@ -1433,7 +1441,7 @@ def factor_attribution(r_s, ff, cfg: Mahoraga4Config, label="") -> Optional[Dict
         return {"Label": label, "error": str(e)}
 
 
-def regime_analysis(r_s, r_b, ohlcv, cfg: Mahoraga4Config) -> pd.DataFrame:
+def regime_analysis(r_s, r_b, ohlcv, cfg: Mahoraga6Config) -> pd.DataFrame:
     idx = to_s(r_s).index
     vix_available = cfg.bench_vix in ohlcv.get("close", pd.DataFrame()).columns
     if vix_available:
@@ -1471,7 +1479,7 @@ def regime_analysis(r_s, r_b, ohlcv, cfg: Mahoraga4Config) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def stress_report(r, exp, episodes, cfg: Mahoraga4Config, r_bench=None) -> pd.DataFrame:
+def stress_report(r, exp, episodes, cfg: Mahoraga6Config, r_bench=None) -> pd.DataFrame:
     rows = []
     for name, (a, b) in episodes.items():
         sub = to_s(r).loc[a:b]
@@ -1521,7 +1529,7 @@ def moving_block_bootstrap(r, block=20, n=1000, seed=42) -> Dict:
 
 def baseline_eqw(
     ohlcv:             Dict,
-    cfg:               Mahoraga4Config,
+    cfg:               Mahoraga6Config,
     costs:             CostsConfig,
     universe_schedule: Optional[pd.DataFrame] = None,
 ) -> Dict:
@@ -1566,7 +1574,7 @@ def baseline_eqw(
 
 def baseline_mom(
     ohlcv:             Dict,
-    cfg:               Mahoraga4Config,
+    cfg:               Mahoraga6Config,
     costs:             CostsConfig,
     universe_schedule: Optional[pd.DataFrame] = None,
 ) -> Dict:
@@ -1620,7 +1628,7 @@ def baseline_mom(
 
 def baseline_signal_decomp(
     ohlcv:             Dict,
-    cfg:               Mahoraga4Config,
+    cfg:               Mahoraga6Config,
     costs:             CostsConfig,
     universe_schedule: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Dict]:
@@ -1643,7 +1651,7 @@ def baseline_signal_decomp(
 # SECTION 12 — SWEEP & OBJECTIVE  (fixes #3, #4, #5; BHY q-values; parallel)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def objective(s_val: Dict, s_qqq: Dict, cfg: Mahoraga4Config) -> float:
+def objective(s_val: Dict, s_qqq: Dict, cfg: Mahoraga6Config) -> float:
     exc_cagr   = s_val["CAGR"]    - s_qqq["CAGR"]
     exc_sharpe = s_val["Sharpe"]  - s_qqq["Sharpe"]
     exc_sort   = s_val["Sortino"] - s_qqq["Sortino"]
@@ -1685,7 +1693,7 @@ SWEEP_GRID = {
 def _evaluate_single_combo(
     combo:             Tuple,
     keys:              List[str],
-    cfg_base:          Mahoraga4Config,
+    cfg_base:          Mahoraga6Config,
     ic_weights:        Tuple[float, float, float],
     ohlcv:             Dict,
     costs:             CostsConfig,
@@ -1745,7 +1753,7 @@ def _evaluate_single_combo(
 
 def run_fold_sweep(
     ohlcv:             Dict,
-    cfg_base:          Mahoraga4Config,
+    cfg_base:          Mahoraga6Config,
     costs:             CostsConfig,
     ic_weights:        Tuple[float, float, float],
     val_start:         str,
@@ -1763,14 +1771,35 @@ def run_fold_sweep(
 
     use_parallel = cfg_base.parallel_sweep and _JOBLIB_AVAILABLE and len(combos) > 4
     if use_parallel:
-        print(f"  [sweep] parallel/loky, {len(combos)} combos "
-              f"(RAM note: ohlcv pickled per process on non-Linux) …")
-        raw = Parallel(n_jobs=-1, backend="loky", verbose=0)(
-            joblib_delayed(_evaluate_single_combo)(
-                c, keys, cfg_base, ic_weights, ohlcv, costs,
-                val_start, val_end, fold_n, base_seed, universe_schedule
-            ) for c in combos
-        )
+        # Windows note: loky requires pickling large objects (ohlcv) and may spill
+        # big temp files to the system TEMP directory, which can fail with low disk space.
+        # To keep runs robust and reproducible across machines, we default to threading on Windows.
+        backend = getattr(cfg_base, "joblib_backend", None)
+        if backend is None:
+            backend = "threading" if os.name == "nt" else "loky"
+        n_jobs = getattr(cfg_base, "joblib_n_jobs", -1)
+        if n_jobs == -1 and os.name == "nt":
+            # Threads on Windows: cap to avoid excessive context switching
+            n_jobs = max(1, min(8, (os.cpu_count() or 4)))
+        temp_folder = getattr(cfg_base, "joblib_temp_folder", None)
+        if temp_folder is not None:
+            os.makedirs(temp_folder, exist_ok=True)
+
+        print(f"  [sweep] parallel/{backend}, {len(combos)} combos …")
+        if backend == "threading":
+            raw = Parallel(n_jobs=n_jobs, backend="threading", verbose=0)(
+                joblib_delayed(_evaluate_single_combo)(
+                    c, keys, cfg_base, ic_weights, ohlcv, costs,
+                    val_start, val_end, fold_n, base_seed, universe_schedule
+                ) for c in combos
+            )
+        else:
+            raw = Parallel(n_jobs=n_jobs, backend="loky", verbose=0, temp_folder=temp_folder)(
+                joblib_delayed(_evaluate_single_combo)(
+                    c, keys, cfg_base, ic_weights, ohlcv, costs,
+                    val_start, val_end, fold_n, base_seed, universe_schedule
+                ) for c in combos
+            )
     else:
         if cfg_base.parallel_sweep and not _JOBLIB_AVAILABLE:
             print("  [sweep] joblib unavailable — serial mode")
@@ -1840,7 +1869,7 @@ def run_fold_sweep(
 
 def run_walk_forward(
     ohlcv:             Dict,
-    cfg_base:          Mahoraga4Config,
+    cfg_base:          Mahoraga6Config,
     costs:             CostsConfig,
     universe_schedule: Optional[pd.DataFrame] = None,
 ) -> Tuple[pd.Series, pd.Series, List[Dict], pd.DataFrame, str, Dict]:
@@ -1975,7 +2004,7 @@ def run_walk_forward(
 # SECTION 14 — ROBUSTNESS SUITE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def execution_sensitivity_stress(ohlcv, cfg: Mahoraga4Config, base_costs: CostsConfig,
+def execution_sensitivity_stress(ohlcv, cfg: Mahoraga6Config, base_costs: CostsConfig,
                                   universe_schedule: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     """
     Execution_Sensitivity_Stress: evaluates performance degradation under severe
@@ -2006,7 +2035,7 @@ def execution_sensitivity_stress(ohlcv, cfg: Mahoraga4Config, base_costs: CostsC
 
 def alternate_universe_stress(
     ohlcv_full: Dict,
-    cfg_base:   Mahoraga4Config,
+    cfg_base:   Mahoraga6Config,
     costs:      CostsConfig,
     universes:  Dict[str, Tuple[str, ...]] = ALTERNATE_UNIVERSES,
 ) -> pd.DataFrame:
@@ -2033,7 +2062,7 @@ def alternate_universe_stress(
 
 def local_sensitivity(
     ohlcv:        Dict,
-    cfg_win:      Mahoraga4Config,
+    cfg_win:      Mahoraga6Config,
     costs:        CostsConfig,
     universe_schedule: Optional[pd.DataFrame] = None,
     param_a:      str   = "vol_target_ann",
@@ -2058,7 +2087,7 @@ def local_sensitivity(
     return pd.DataFrame(rows)
 
 
-def stop_keep_cash_ablation(ohlcv, cfg_win: Mahoraga4Config, costs: CostsConfig,
+def stop_keep_cash_ablation(ohlcv, cfg_win: Mahoraga6Config, costs: CostsConfig,
                              universe_schedule: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     rows = []
     for mode, skc in [("RESEARCH (keep_cash=True)", True), ("AGGRESSIVE (keep_cash=False)", False)]:
@@ -2073,7 +2102,7 @@ def stop_keep_cash_ablation(ohlcv, cfg_win: Mahoraga4Config, costs: CostsConfig,
     return pd.DataFrame(rows)
 
 
-def ic_weight_ablation(ohlcv, cfg_win: Mahoraga4Config, costs: CostsConfig,
+def ic_weight_ablation(ohlcv, cfg_win: Mahoraga6Config, costs: CostsConfig,
                         universe_schedule: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     rows = []
     for mode, (wt, wm, wr) in [
@@ -2098,7 +2127,7 @@ def ic_weight_ablation(ohlcv, cfg_win: Mahoraga4Config, costs: CostsConfig,
 
 def corr_shield_ablation(
     ohlcv: Dict,
-    cfg_win: Mahoraga4Config,
+    cfg_win: Mahoraga6Config,
     costs: CostsConfig,
     universe_schedule: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
@@ -2269,7 +2298,7 @@ def plot_regime_bars(regime_df: pd.DataFrame, title: str, path: str):
         ax.axhline(0, color="black", lw=.5); ax.grid(alpha=.3, axis="y")
     fig.suptitle(title, fontsize=13, fontweight="bold"); _save(fig, path)
 
-def plot_signal_decomp(decomp: Dict, bench_r: pd.Series, cfg: Mahoraga4Config, title: str, path: str):
+def plot_signal_decomp(decomp: Dict, bench_r: pd.Series, cfg: Mahoraga6Config, title: str, path: str):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15,5))
     clr = {"TREND_ONLY":"#1f77b4","MOM_ONLY":"#ff7f0e","REL_ONLY":"#2ca02c"}
     shs = {}
@@ -2301,7 +2330,7 @@ def plot_weights_heatmap(weights: pd.DataFrame, title: str, path: str):
 
 def final_evaluation(
     ohlcv:             Dict,
-    cfg_win:           Mahoraga4Config,
+    cfg_win:           Mahoraga6Config,
     costs:             CostsConfig,
     ff:                Optional[pd.DataFrame],
     oos_r:             pd.Series,
@@ -2389,7 +2418,7 @@ def _fmt(s: Dict) -> Dict:
 def print_results(out: Dict, fold_results: List[Dict], ff, selected_config_info: Dict):
     sep = "="*110
     print(UNIVERSE_BIAS_DISCLAIMER)
-    print(f"\n{sep}\n  MAHORAGA 4 — FULL RESULTS\n{sep}")
+    print(f"\n{sep}\n  MAHORAGA 6 — FULL RESULTS\n{sep}")
     oos_label = out.get("oos_label", "OOS")
 
     print(f"\n{'─'*70}  FULL PERIOD")
@@ -2461,7 +2490,7 @@ def print_results(out: Dict, fold_results: List[Dict], ff, selected_config_info:
 def _build_final_report_text(out: Dict, fold_results: List[Dict],
                               selected_config_info: Dict, oos_label: str) -> str:
     lines = [
-        "MAHORAGA 4 — FINAL REPORT",
+        "MAHORAGA 6 — FINAL REPORT",
         "="*80,
         UNIVERSE_BIAS_DISCLAIMER,
         "",
@@ -2498,7 +2527,7 @@ def save_outputs(
     all_sweeps:          pd.DataFrame,
     selected_config_info: Dict,
     oos_label:           str,
-    cfg:                 Mahoraga4Config,
+    cfg:                 Mahoraga6Config,
     universe_schedule:   Optional[pd.DataFrame] = None,
     universe_snapshots:  Optional[List[pd.DataFrame]] = None,
 ):
@@ -2628,9 +2657,9 @@ def make_plots(out, oos_r, oos_eq, fold_results, ic_df, decomp, rob, cfg,
     res = out["res"]; eqw = out["eqw"]; mom = out["mom"]
     plot_equity({cfg.label: res["equity"], "QQQ": res["bench"]["QQQ_eq"],
                  "EQW": eqw["eq"], "MOM_12_1": mom["eq"]},
-                "Full Period Equity — Mahoraga 4", f"{p}/01_equity_full.png")
+                "Full Period Equity — Mahoraga 6", f"{p}/01_equity_full.png")
     plot_equity({cfg.label: oos_eq, "QQQ (OOS)": res["bench"]["QQQ_eq"].reindex(oos_r.index)},
-                f"Walk-Forward {oos_label} — Mahoraga 4", f"{p}/02_equity_oos.png")
+                f"Walk-Forward {oos_label} — Mahoraga 6", f"{p}/02_equity_oos.png")
     plot_drawdown({cfg.label: res["equity"], "QQQ": res["bench"]["QQQ_eq"], "MOM_12_1": mom["eq"]},
                   "Drawdown", f"{p}/03_drawdown.png")
     plot_wf_oos(oos_eq, res["bench"]["QQQ_eq"].reindex(oos_r.index),
@@ -2651,13 +2680,13 @@ def make_plots(out, oos_r, oos_eq, fold_results, ic_df, decomp, rob, cfg,
 # SECTION 18 — MAIN RUNNER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def run_mahoraga4(make_plots_flag: bool = True, run_robustness: bool = True) -> Dict:
+def _run_mahoraga6_impl(make_plots_flag: bool = True, run_robustness: bool = True) -> Dict:
     print("="*80)
-    print("  MAHORAGA 4 — Research Edition")
+    print("  MAHORAGA 6 — Research Edition")
     print("="*80)
     print(UNIVERSE_BIAS_DISCLAIMER)
 
-    cfg   = Mahoraga4Config()
+    cfg   = Mahoraga6Config()
     costs = CostsConfig()
     ucfg  = UniverseConfig()
     _ensure_dir(cfg.cache_dir)
@@ -2849,7 +2878,7 @@ KNOWN_TICKER_START_OVERRIDES: Dict[str, str] = {
 
 
 @dataclass
-class Mahoraga5Config(Mahoraga4Config):
+class Mahoraga5Config(Mahoraga6Config):
     plots_dir:      str  = "mahoraga5_plots"
     outputs_dir:    str  = "mahoraga5_outputs"
     label:          str  = "MAHORAGA_5"
@@ -3199,7 +3228,7 @@ def _pairwise_corr_avg(corr: pd.DataFrame) -> float:
 def compute_corr_shield_series(
     rets: pd.DataFrame,
     idx: pd.DatetimeIndex,
-    cfg: Mahoraga4Config,
+    cfg: Mahoraga6Config,
     univ_master: List[str],
     use_pit_universe: bool,
     universe_schedule: Optional[pd.DataFrame] = None,
@@ -3285,7 +3314,7 @@ def compute_corr_shield_series(
 
 def backtest(
     ohlcv:             Dict[str, pd.DataFrame],
-    cfg:               Mahoraga4Config,
+    cfg:               Mahoraga6Config,
     costs:             CostsConfig,
     label:             str = "MAHORAGA_5",
     universe:          Optional[List[str]] = None,
@@ -3400,7 +3429,7 @@ def backtest(
 
 def run_walk_forward(
     ohlcv:             Dict,
-    cfg_base:          Mahoraga4Config,
+    cfg_base:          Mahoraga6Config,
     costs:             CostsConfig,
     universe_schedule: Optional[pd.DataFrame] = None,
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, List[Dict], pd.DataFrame, str, Dict]:
@@ -3534,7 +3563,7 @@ def _future_compound_return(r: pd.Series, horizon: int) -> pd.Series:
 def build_regime_feature_frame(
     ohlcv: Dict[str, pd.DataFrame],
     base_res: Dict,
-    cfg: Mahoraga4Config,
+    cfg: Mahoraga6Config,
 ) -> pd.DataFrame:
     scores = base_res["scores"].copy()
     idx = scores.index
@@ -4337,9 +4366,9 @@ class Mahoraga6Config(Mahoraga5Config):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
-class Mahoraga5Config(Mahoraga4Config):
+class Mahoraga5Config(Mahoraga6Config):
     """
-    Mahoraga 5 consolidates the stable Mahoraga 4 research stack and keeps:
+    Mahoraga 5 consolidates the stable Mahoraga 6 research stack and keeps:
       - data hygiene / asset registry,
       - canonical PIT universe schedule,
       - walk-forward purity / audit trail,
@@ -4668,159 +4697,13 @@ def make_plots(out, oos_r, oos_eq, fold_results, ic_df, decomp, rob, cfg,
 
 
 def run_mahoraga6(make_plots_flag: bool = True, run_robustness: bool = True) -> Dict:
-    print("=" * 80)
-    print("  MAHORAGA 6 — Research Edition")
-    print("=" * 80)
-    print(UNIVERSE_BIAS_DISCLAIMER)
+    """Public entrypoint for Mahoraga 6.
 
-    cfg = Mahoraga6Config()
-    costs = CostsConfig()
-    ucfg = UniverseConfig()
-    _ensure_dir(cfg.cache_dir)
-    _ensure_dir(cfg.plots_dir)
-    _ensure_dir(cfg.outputs_dir)
-
-    print("\n[1] Downloading data …")
-    equity_tickers = sorted(set(list(cfg.universe_static) + [t for u in ALTERNATE_UNIVERSES.values() for t in u]))
-    bench_tickers = [cfg.bench_qqq, cfg.bench_spy, cfg.bench_vix]
-    all_tickers = sorted(set(equity_tickers + bench_tickers))
-    ohlcv = download_ohlcv(all_tickers, cfg.data_start, cfg.data_end, cfg.cache_dir)
-
-    print("\n[1b] Fama-French factors …")
-    ff = load_ff_factors(cfg.cache_dir)
-
-    print("\n[1c] Data hygiene & asset registry …")
-    asset_registry = build_asset_registry(equity_tickers, cfg, bench_tickers)
-    data_quality_report = compute_data_quality_report(ohlcv, equity_tickers, cfg)
-    clean_equity = filter_equity_candidates([t for t in equity_tickers if t in ohlcv["close"].columns],
-                                            asset_registry, data_quality_report, cfg)
-    print(f"  [dq] raw equity candidates:   {len([t for t in equity_tickers if t in ohlcv['close'].columns])}")
-    print(f"  [dq] clean equity candidates: {len(clean_equity)}")
-    if len(clean_equity) < cfg.min_universe_names:
-        print("  [dq] WARNING: too few clean names after quality filters; reverting to raw equity candidates")
-        clean_equity = [t for t in equity_tickers if t in ohlcv["close"].columns]
-
-    universe_schedule = None
-    universe_snapshots = None
-    universe_diagnostics = pd.DataFrame()
-    if cfg.use_canonical_universe:
-        print("\n[1d] Canonical universe engine (quarterly LiqSizeProxy reconstitution) …")
-        print(f"  [universe] tickers_in_scope = {len(clean_equity)} clean equity candidates (benchmarks excluded)")
-        universe_schedule, universe_snapshots = build_canonical_universe_schedule(
-            ohlcv["close"], ohlcv["volume"], ucfg, clean_equity,
-            cfg.data_start, cfg.data_end,
-            registry_df=asset_registry, quality_df=data_quality_report,
-        )
-        universe_diagnostics = build_universe_diagnostics(universe_schedule)
-        n_recon = len(universe_schedule)
-        print(f"  [universe] {n_recon} reconstitution dates built")
-        if n_recon > 0:
-            first_u = json.loads(universe_schedule.iloc[0]["members"])
-            last_u = json.loads(universe_schedule.iloc[-1]["members"])
-            print(f"  [universe] first recon ({universe_schedule.iloc[0]['recon_date']}): {first_u}")
-            print(f"  [universe] last  recon ({universe_schedule.iloc[-1]['recon_date']}): {last_u}")
-        print("  [universe] Schedule governs backtest point-in-time at each rebalance.")
-    else:
-        print("\n[1d] *** WARNING: use_canonical_universe=False ***")
-        print("     Running on static ex-post universe. Survivorship bias is PRESENT.")
-        print(f"     Static universe: {list(cfg.universe_static)}")
-
-    print("\n[2] Walk-forward …")
-    oos_r, oos_eq, oos_exp, oos_to, fold_results, all_sweeps, oos_label, selected_config_info = \
-        run_walk_forward(ohlcv, cfg, costs, universe_schedule=universe_schedule)
-
-    oos_summary = summarize(oos_r, oos_eq, oos_exp, oos_to, cfg, oos_label)
-    print(f"\n  OOS type:   {oos_label}")
-    print(f"  OOS Sharpe={oos_summary['Sharpe']:.3f}  CAGR={oos_summary['CAGR']*100:.1f}%  MaxDD={oos_summary['MaxDD']*100:.1f}%")
-
-    print("\n[3] Applying last-fold winning combo as final config …")
-    last_train_end = cfg.wf_folds[-1][0]
-    cfg_final = deepcopy(cfg)
-    qqq_full = to_s(ohlcv["close"][cfg.bench_qqq].ffill())
-    dd_thr, vol_thr = calibrate_crisis_thresholds(qqq_full, cfg.wf_train_start, last_train_end, cfg_final)
-    cfg_final.crisis_dd_thr = dd_thr
-    cfg_final.crisis_vol_zscore_thr = vol_thr
-    for k, v in selected_config_info["combo_params"].items():
-        setattr(cfg_final, k, v)
-
-    final_train_tickers = get_training_universe(last_train_end, universe_schedule,
-                                                cfg.universe_static, list(ohlcv["close"].columns))
-    close_univ = ohlcv["close"][final_train_tickers]
-    wt, wm, wr = fit_ic_weights(close_univ, qqq_full.loc[cfg.wf_train_start:last_train_end], cfg_final,
-                                cfg.wf_train_start, last_train_end)
-    cfg_final.w_trend = wt
-    cfg_final.w_mom = wm
-    cfg_final.w_rel = wr
-
-    print(f"\n  Final config: {selected_config_info['combo_params']}")
-    print(f"  Statistical support (last fold): p={selected_config_info['val_p_value']:.6f}  q={selected_config_info['val_q_value']:.6f}  sig@5%={selected_config_info['val_sig_5pct']}  label={selected_config_info['val_stat_label']}")
-
-    print("\n[4] Full evaluation …")
-    out = final_evaluation(ohlcv, cfg_final, costs, ff, oos_r, oos_eq, oos_exp, oos_to, oos_label,
-                           universe_schedule=universe_schedule)
-
-    print("\n[5] Rolling IC (1d/5d/21d) …")
-    ic_df = rolling_ic_multi_horizon(close_univ, qqq_full, cfg_final, window=63)
-
-    print("\n[6] Signal decomposition …")
-    decomp = baseline_signal_decomp(ohlcv, cfg_final, costs,
-                                    universe_schedule=universe_schedule)
-
-    rob = {}
-    if run_robustness:
-        print("\n[7a] Execution_Sensitivity_Stress …")
-        print(EXECUTION_STRESS_DISCLAIMER)
-        rob["exec_stress"] = execution_sensitivity_stress(ohlcv, cfg_final, costs,
-                                                          universe_schedule=universe_schedule)
-        print("\n[7b] Alternate universes …")
-        rob["alt_univ"] = alternate_universe_stress(ohlcv, cfg_final, costs)
-        print("\n[7c] Local parameter sensitivity …")
-        rob["sensitivity"] = local_sensitivity(ohlcv, cfg_final, costs,
-                                               universe_schedule=universe_schedule)
-        print("\n[7d] Stop ablation …")
-        rob["stop_ablation"] = stop_keep_cash_ablation(ohlcv, cfg_final, costs,
-                                                        universe_schedule=universe_schedule)
-        print("\n[7e] IC weight ablation …")
-        rob["ic_ablation"] = ic_weight_ablation(ohlcv, cfg_final, costs,
-                                                 universe_schedule=universe_schedule)
-
-        print("\n[7f] Correlation Shield ablation …")
-        rob["corr_ablation"] = corr_shield_ablation(ohlcv, cfg_final, costs,
-                                                   universe_schedule=universe_schedule)
-
-    print_results(out, fold_results, ff, selected_config_info)
-    save_outputs(out, fold_results, ic_df, rob, all_sweeps, selected_config_info,
-                 oos_label, cfg_final, universe_schedule=universe_schedule,
-                 universe_snapshots=universe_snapshots,
-                 universe_diagnostics=universe_diagnostics,
-                 data_quality_report=data_quality_report,
-                 asset_registry=asset_registry)
-
-    if make_plots_flag:
-        print("\n[8] Generating plots …")
-        make_plots(out, oos_r, oos_eq, fold_results, ic_df, decomp, rob, cfg_final, oos_label)
-
-    return {
-        "cfg": cfg_final,
-        "out": out,
-        "oos_r": oos_r,
-        "oos_eq": oos_eq,
-        "oos_exp": oos_exp,
-        "oos_to": oos_to,
-        "oos_label": oos_label,
-        "fold_results": fold_results,
-        "ic_df": ic_df,
-        "decomp": decomp,
-        "rob": rob,
-        "selected_config_info": selected_config_info,
-        "universe_schedule": universe_schedule,
-        "universe_diagnostics": universe_diagnostics,
-        "data_quality_report": data_quality_report,
-        "asset_registry": asset_registry,
-    }
+    Implemented as a thin wrapper to keep the file DRY and avoid duplicated runner logic.
+    """
+    return _run_mahoraga6_impl(make_plots_flag=make_plots_flag, run_robustness=run_robustness)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 
 # Backward-compatible alias
 run_mahoraga5 = run_mahoraga6
