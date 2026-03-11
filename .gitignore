@@ -1,0 +1,9 @@
+# Entornos virtuales
+venv/
+mahoraga_env/
+env/
+.env
+
+mahoraga_env/
+__pycache__/
+*.py[cod]
