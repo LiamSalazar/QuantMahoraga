@@ -2887,7 +2887,7 @@ def _longest_true_streak(mask: pd.Series) -> int:
 
 def build_asset_registry(
     tickers: List[str],
-    cfg: Mahoraga5Config,
+    cfg: Mahoraga6Config,
     bench_tickers: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """
@@ -4822,16 +4822,6 @@ def run_mahoraga6(make_plots_flag: bool = True, run_robustness: bool = True) -> 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Backward-compatible alias
-run_mahoraga5 = run_mahoraga6
-# ENTRY POINT
-# ═══════════════════════════════════════════════════════════════════════════════
-
-if __name__ == "__main__":
-    results = run_mahoraga6(make_plots_flag=True, run_robustness=True)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 20 — MAHORAGA 6.1 CLEAN OVERRIDES
 # ═══════════════════════════════════════════════════════════════════════════════
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -5611,3 +5601,7 @@ def run_mahoraga6(make_plots_flag: bool = True, run_robustness: bool = True) -> 
 
 def run_mahoraga6_1(make_plots_flag: bool = True, run_robustness: bool = True) -> Dict:
     return run_mahoraga6(make_plots_flag=make_plots_flag, run_robustness=run_robustness)
+
+
+if __name__ == "__main__":
+    results = run_mahoraga6_1(make_plots_flag=True, run_robustness=True)
