@@ -60,6 +60,8 @@
 ║  This is a conditional research exercise, not a trading recommendation.      ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
+from __future__ import annotations
+
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -99,8 +101,6 @@ except ImportError:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 UNIVERSE_BIAS_DISCLAIMER = """
-from __future__ import annotations
-
 ═══════════════════════════════════════════════════════════════════════════════
   METHODOLOGY DISCLAIMER — UNIVERSE BIAS
 ───────────────────────────────────────────────────────────────────────────────
@@ -2889,7 +2889,7 @@ def _longest_true_streak(mask: pd.Series) -> int:
 
 def build_asset_registry(
     tickers: List[str],
-    cfg: Mahoraga6Config,
+    cfg: Mahoraga5Config,
     bench_tickers: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """
@@ -4823,7 +4823,6 @@ def run_mahoraga6(make_plots_flag: bool = True, run_robustness: bool = True) -> 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-
 # SECTION 20 — MAHORAGA 6.1 CLEAN OVERRIDES
 # ═══════════════════════════════════════════════════════════════════════════════
 # ═══════════════════════════════════════════════════════════════════════════════
