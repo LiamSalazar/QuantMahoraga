@@ -1,0 +1,2 @@
+weight_cap,k_atr,turb_zscore_thr,turb_scale_min,vol_target_ann,source,val_score,val_p_value,val_q_value,val_sig_5pct,val_stat_label,val_sharpe,any_sig_5pct,frac_sig_5pct
+0.55,3.0,1.5,0.4,0.25,last_fold_winner,0.5484654093028672,0.004976,0.129929,False,econ_strong_stat_weak,2.317660541909181,False,0.0

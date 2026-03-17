@@ -1,5 +1,6 @@
-from __future__ import annotations
+from pathlib import Path
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
 """
 MahoragaAI2
 ===========
@@ -71,7 +72,7 @@ class MahoragaAI2Config(m6.Mahoraga6Config):
 
     # Baseline 6.1 artifacts
     baseline_outputs_dir: str = "mahoraga6_1_outputs"
-    baseline_folds_csv: str = ""
+    baseline_folds_csv = r"C:\Users\AMD RYZEN 7\OneDrive\Documentos\QuantMahoraga\mahoragaAI\version2\mahoraga6_1_outputs\walk_forward_folds.csv"
 
     # Runtime / decision frequency
     ai_decision_freq: str = "W-FRI"
@@ -108,20 +109,26 @@ class MahoragaAI2Config(m6.Mahoraga6Config):
     ai_defensive_cap_mult: float = 0.90
 
 
-def _find_baseline_folds_csv(cfg: MahoragaAI2Config) -> str:
+def _find_baseline_folds_csv(cfg):
     candidates = []
-    if cfg.baseline_folds_csv:
-        candidates.append(cfg.baseline_folds_csv)
-    candidates += [
-        os.path.join(cfg.baseline_outputs_dir, "walk_forward_folds.csv"),
-        "walk_forward_folds.csv",
-    ]
+
+    if getattr(cfg, "baseline_folds_csv", None):
+        candidates.append(Path(cfg.baseline_folds_csv))
+
+    candidates.extend([
+        _SCRIPT_DIR / "mahoraga6_1_outputs" / "walk_forward_folds.csv",
+        _SCRIPT_DIR / "walk_forward_folds.csv",
+        Path.cwd() / "mahoraga6_1_outputs" / "walk_forward_folds.csv",
+        Path.cwd() / "walk_forward_folds.csv",
+    ])
+
     for p in candidates:
-        if p and os.path.exists(p):
+        if p.exists():
             return p
+
     raise FileNotFoundError(
-        "No baseline walk_forward_folds.csv found. Set `baseline_folds_csv` or place "
-        "Mahoraga 6.1 outputs next to this file."
+        "No baseline walk_forward_folds.csv found. "
+        "Set `baseline_folds_csv` or place Mahoraga 6.1 outputs next to this file."
     )
 
 
