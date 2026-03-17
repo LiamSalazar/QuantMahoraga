@@ -142,18 +142,35 @@ def _mode_library(cfg: MahoragaAI11Config, params: Dict[str, float]) -> Dict[str
 
 
 def _component_scores(close: pd.DataFrame, qqq: pd.Series, cfg: MahoragaAI11Config) -> Dict[str, pd.DataFrame]:
-    out = {"trend": pd.DataFrame(index=close.index, columns=close.columns, dtype=float),
-           "mom": pd.DataFrame(index=close.index, columns=close.columns, dtype=float),
-           "rel": pd.DataFrame(index=close.index, columns=close.columns, dtype=float)}
-    qqq_mom = qqq.pct_change(cfg.rel_mom_lookback).fillna(0.0)
+    idx = close.index
+    qqq_ = m6.to_s(qqq, "QQQ").reindex(idx).ffill()
+
+    out = {
+        "trend": pd.DataFrame(index=idx, columns=close.columns, dtype=float),
+        "mom":   pd.DataFrame(index=idx, columns=close.columns, dtype=float),
+        "rel":   pd.DataFrame(index=idx, columns=close.columns, dtype=float),
+    }
+
     for t in close.columns:
-        cl = close[t].ffill()
-        mo = m6.mom_score(cl, cfg.mom_lookback)
-        tr = m6.trend_score(cl, cfg.trend_lookback)
-        re = m6.rel_strength_score(cl, qqq, cfg.rel_mom_lookback)
-        out["trend"][t] = tr.fillna(0.0)
-        out["mom"][t] = mo.fillna(0.0)
-        out["rel"][t] = re.fillna(0.0)
+        cl = close[t].reindex(idx).ffill()
+
+        # Usar exactamente la misma definición de señal que Mahoraga 6.1
+        tr = m6._trend(cl, cfg)
+        mo = m6._mom(cl, cfg)
+        re = m6._rel(cl, qqq_, cfg)
+
+        tr = tr.fillna(0.0)
+        mo = mo.fillna(0.0)
+        re = re.fillna(0.0)
+
+        tr.iloc[:cfg.burn_in] = 0.0
+        mo.iloc[:cfg.burn_in] = 0.0
+        re.iloc[:cfg.burn_in] = 0.0
+
+        out["trend"][t] = tr
+        out["mom"][t] = mo
+        out["rel"][t] = re
+
     return out
 
 
