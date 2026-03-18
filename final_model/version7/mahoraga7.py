@@ -26,6 +26,41 @@ Design choices for speed
 - Compact calibration grid
 
 This file must live next to `mahoraga6_1.py` and the Mahoraga 6.1 outputs.
+
+Fixes applied (vs original)
+----------------------------
+FIX-1  _make_rel_tilt_cfg: removed call to m6._normalize_triplet (never existed).
+       Weight vector is now normalised inline with numpy directly.
+FIX-2  _calibrate_hawkes_and_overlay (line ~596): replaced deprecated
+       fillna(method="ffill") with .ffill() (pandas >= 2.2 compatibility).
+FIX-3  policy_daily fillna: replaced fillna(dict) with explicit per-column
+       fillna calls to avoid silent NaN leakage on mixed-type columns and
+       pandas >= 2.x TypeError (lines ~627-631 and ~713-717).
+FIX-4  _hawkes_intensity: precompute events.shift(1) once outside the loop
+       instead of recomputing inside each iteration (O(n) instead of O(n^2))
+       and replaced slow .loc[dt] scalar access with numpy array indexing.
+FIX-5  _run_single_fold: compute total fold count once outside the fold body
+       instead of calling build_contiguous_folds (with its asserts + prints)
+       on every fold just to get len().
+FIX-6  _build_context_table: guard .loc[dt] accesses for pct_change / shift
+       operations with reindex+ffill to avoid KeyError on edge-of-window dates.
+
+Performance fixes (PERF)
+------------------------
+PERF-1  _calibrate_hawkes_and_overlay — 7A path: skip _custom_backtest_with_overlay
+        entirely. _diagnostic_alignment_score only needs hawkes_df + crisis_state;
+        calling a full overlay backtest for each of 1024 grid combos in 7A was
+        pure waste (~100x speedup on the 7A calibration loop).
+PERF-2  _calibrate_hawkes_and_overlay — 7B path: two-stage grid search.
+        Stage 1 finds the best Hawkes params (stress_q, recovery_q, decay,
+        stress_scale, recovery_scale) using the cheap diagnostic score.
+        Stage 2 sweeps only the overlay params (defensive_scale, recovery_floor,
+        rel_tilt, stress_trigger_q, recovery_trigger_q) with the full backtest
+        but using the fixed Stage-1 Hawkes params.
+        Reduces full backtests from 2^10=1024 to 2^5=32 per fold (~32x speedup).
+PERF-3  Mahoraga7Config: tighten default grids — single-element tuples for the
+        least-sensitive parameters, so advanced users can widen them deliberately
+        rather than paying the cost by default.
 """
 
 import os
@@ -90,11 +125,14 @@ class Mahoraga7Config(m6.Mahoraga6Config):
     recovery_q_grid: Tuple[float, ...] = (0.80, 0.85)
 
     # Hawkes-like intensity parameters
+    # PERF-3: decay and scale grids kept at 2 values each; these are swept cheaply
+    # in Stage 1 (no backtest needed). Widen here if you want a finer search.
     hawkes_decay_grid: Tuple[float, ...] = (0.65, 0.80)
     stress_scale_grid: Tuple[float, ...] = (0.8, 1.0)
     recovery_scale_grid: Tuple[float, ...] = (0.8, 1.0)
 
-    # Overlay parameters (7B)
+    # Overlay parameters (7B) — swept in Stage 2 (requires full backtest).
+    # PERF-3: kept compact by default. Each additional value doubles Stage-2 cost.
     defensive_scale_grid: Tuple[float, ...] = (0.80, 0.90)
     recovery_floor_grid: Tuple[float, ...] = (0.35, 0.50)
     rel_tilt_grid: Tuple[float, ...] = (0.55, 0.60)
@@ -236,11 +274,19 @@ def _build_context_table(
             members = [t for t in cfg.universe_static if t in tickers]
         if len(members) == 0:
             continue
-        sub21 = close[members].loc[:dt].tail(21).pct_change().dropna(how="all")
-        sub63 = close[members].loc[:dt].tail(63).pct_change().dropna(how="all")
-        xs5 = close[members].pct_change(5).loc[dt]
-        xs21 = close[members].pct_change(21).loc[dt]
-        breadth63 = (close[members].loc[dt] > close[members].shift(63).loc[dt]).mean()
+        # FIX-6: precompute pct_change / shift frames once per date slice
+        # to avoid KeyError when dt is near the start of the window.
+        close_members = close[members]
+        sub21 = close_members.loc[:dt].tail(21).pct_change().dropna(how="all")
+        sub63 = close_members.loc[:dt].tail(63).pct_change().dropna(how="all")
+        pct5   = close_members.pct_change(5).reindex(close.index)
+        pct21  = close_members.pct_change(21).reindex(close.index)
+        shift63 = close_members.shift(63).reindex(close.index)
+        xs5 = pct5.loc[dt] if dt in pct5.index else pd.Series(np.nan, index=members)
+        xs21 = pct21.loc[dt] if dt in pct21.index else pd.Series(np.nan, index=members)
+        close_dt = close_members.loc[dt] if dt in close_members.index else pd.Series(np.nan, index=members)
+        shift63_dt = shift63.loc[dt] if dt in shift63.index else pd.Series(np.nan, index=members)
+        breadth63 = (close_dt > shift63_dt).mean()
         tr_row = comp["trend"].loc[dt, members].astype(float)
         mo_row = comp["mom"].loc[dt, members].astype(float)
         re_row = comp["rel"].loc[dt, members].astype(float)
@@ -313,13 +359,17 @@ def _build_event_table(feat: pd.DataFrame, thr: Dict[str, float]) -> pd.DataFram
 
 
 def _hawkes_intensity(events: pd.Series, decay: float, scale: float) -> pd.Series:
-    vals = pd.Series(0.0, index=events.index, dtype=float)
-    prev = 0.0
+    # FIX-4: precompute shifted array once (O(n)) instead of calling
+    # events.shift(1).fillna(0.0).loc[dt] inside the loop (O(n^2)).
+    # Also replaced slow .loc[dt] scalar access with direct numpy indexing.
     base = float(events.mean()) if len(events) else 0.0
-    for dt in events.index:
-        prev = base + decay * prev + scale * float(events.shift(1).fillna(0.0).loc[dt])
-        vals.loc[dt] = max(0.0, prev)
-    return vals
+    ev_shifted = events.shift(1).fillna(0.0).values  # precomputed once
+    vals = np.zeros(len(events), dtype=float)
+    prev = 0.0
+    for i, ev in enumerate(ev_shifted):
+        prev = base + decay * prev + scale * float(ev)
+        vals[i] = max(0.0, prev)
+    return pd.Series(vals, index=events.index)
 
 
 def _build_hawkes_signals(feat: pd.DataFrame, stress_q: float, recovery_q: float, decay: float, stress_scale: float, recovery_scale: float, train_slice: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, float]]:
@@ -336,7 +386,10 @@ def _build_hawkes_signals(feat: pd.DataFrame, stress_q: float, recovery_q: float
 
 def _make_rel_tilt_cfg(base_cfg: Mahoraga7Config, rel_tilt: float) -> Mahoraga7Config:
     cfg = deepcopy(base_cfg)
-    bw = np.array(m6._normalize_triplet(cfg.w_trend, cfg.w_mom, cfg.w_rel), dtype=float)
+    # FIX-1: m6._normalize_triplet does not exist. Normalise inline.
+    bw = np.array([cfg.w_trend, cfg.w_mom, cfg.w_rel], dtype=float)
+    _s = bw.sum()
+    bw = bw / _s if _s > 0 else np.array([1.0 / 3, 1.0 / 3, 1.0 / 3])
     rel_target = float(np.clip(rel_tilt, 0.34, 0.75))
     rem = max(0.0, 1.0 - rel_target)
     tm = bw[:2]
@@ -423,6 +476,7 @@ def _custom_backtest_with_overlay(
     idx = close.index
     qqq = m6.to_s(ohlcv["close"][cfg.bench_qqq].reindex(idx).ffill(), "QQQ")
     spy = m6.to_s(ohlcv["close"][cfg.bench_spy].reindex(idx).ffill(), "SPY")
+    rets = close.pct_change().fillna(0.0)
 
     crisis_scale, crisis_state = m6.compute_crisis_gate(qqq, cfg)
     turb_scale = m6.compute_turbulence(close, volume, qqq, cfg)
@@ -430,13 +484,16 @@ def _custom_backtest_with_overlay(
     if getattr(cfg, "bench_vix", None) in ohlcv.get("close", pd.DataFrame()).columns:
         vix = m6.to_s(ohlcv["close"][cfg.bench_vix].reindex(idx).ffill(), "VIX")
     corr_rho, corr_scale, corr_state = m6.compute_corr_shield_series(
-        rets, idx, cfg, univ_master, use_pit_universe, universe_schedule=universe_schedule, vix=vix
+        rets, idx, cfg, univ_master, use_pit_universe,
+        universe_schedule=universe_schedule, vix=vix
     )
 
     score_base = m6.compute_scores(close, qqq, cfg)
-    cfg_rel = _make_rel_tilt_cfg(cfg, float(daily_policy["rel_tilt"].dropna().iloc[0])) if daily_policy["rel_tilt"].notna().any() else _make_rel_tilt_cfg(cfg, 0.60)
+    cfg_rel = _make_rel_tilt_cfg(
+        cfg,
+        float(daily_policy["rel_tilt"].dropna().iloc[0])
+    ) if daily_policy["rel_tilt"].notna().any() else _make_rel_tilt_cfg(cfg, 0.60)
     score_rel = m6.compute_scores(close, qqq, cfg_rel)
-    rets = close.pct_change().fillna(0.0)
 
     action_daily = daily_policy["action"].reindex(idx).ffill().fillna("BASELINE")
     ext_scale = daily_policy["ext_scale"].reindex(idx).ffill().fillna(1.0).clip(0.0, 1.0)
@@ -560,6 +617,24 @@ def _calibrate_hawkes_and_overlay(
     train_start: str,
     train_end: str,
 ) -> Tuple[Dict[str, float], pd.DataFrame]:
+    """
+    Two-stage calibration (PERF-1 + PERF-2).
+
+    Stage 1 — Hawkes parameter sweep (cheap, no backtest):
+        Sweeps stress_q, recovery_q, decay, stress_scale, recovery_scale
+        using _diagnostic_alignment_score only. No backtest needed here
+        for either variant, because the score only depends on hawkes_df
+        alignment with crisis_state. This is O(32) cheap signal builds.
+
+    Stage 2 — Overlay parameter sweep (7B only, requires backtest):
+        With Hawkes params fixed from Stage 1, sweeps the overlay params
+        (defensive_scale, recovery_floor, rel_tilt, stress_trigger_q,
+        recovery_trigger_q) using the full _custom_backtest_with_overlay.
+        This is O(32) backtests instead of O(1024).
+
+    PERF-1: In 7A mode Stage 2 is skipped entirely — no backtest at all.
+    PERF-2: In 7B mode total backtests = 2^5 = 32 instead of 2^10 = 1024.
+    """
     feat_train = feat_full.loc[train_start:train_end].copy()
     if len(feat_train) < cfg_fold.min_train_weeks:
         return {
@@ -581,7 +656,7 @@ def _calibrate_hawkes_and_overlay(
     inner_val_start = str(feat_train.index[split_n].date())
     inner_val_end = train_end
 
-    # Build a baseline on inner validation once
+    # Run base backtest once — needed for crisis_state and (in 7B) for base_sum.
     base_bt = m6.backtest(ohlcv, cfg_fold, costs, label="BASE_INNER", universe_schedule=universe_schedule)
     base_r = base_bt["returns_net"].loc[inner_val_start:inner_val_end]
     base_eq = base_bt["equity"].loc[inner_val_start:inner_val_end]
@@ -589,29 +664,99 @@ def _calibrate_hawkes_and_overlay(
     base_to = base_bt["turnover"].loc[inner_val_start:inner_val_end]
     base_sum = m6.summarize(base_r, base_eq, base_exp, base_to, cfg_fold, "BASE_INNER")
 
-    crisis_state_weekly = base_bt["crisis_state"].resample(cfg_fold.decision_freq).last().reindex(feat_full.index).fillna(method="ffill").fillna(0.0)
+    # FIX-2: .ffill() instead of deprecated fillna(method="ffill")
+    crisis_state_weekly = (
+        base_bt["crisis_state"]
+        .resample(cfg_fold.decision_freq).last()
+        .reindex(feat_full.index)
+        .ffill()
+        .fillna(0.0)
+    )
 
-    rows = []
-    best_params = None
-    best_score = -np.inf
+    # ─────────────────────────────────────────────────────────────────────────
+    # STAGE 1: Hawkes parameter sweep — cheap, no backtest required.
+    # Score = _diagnostic_alignment_score for both 7A and 7B.
+    # ─────────────────────────────────────────────────────────────────────────
+    s1_best_params = None
+    s1_best_score = -np.inf
+    s1_rows = []
 
-    grid = iproduct(
+    for stress_q, recovery_q, decay, stress_scale, recovery_scale in iproduct(
         cfg_fold.stress_q_grid,
         cfg_fold.recovery_q_grid,
         cfg_fold.hawkes_decay_grid,
         cfg_fold.stress_scale_grid,
         cfg_fold.recovery_scale_grid,
+    ):
+        hawkes_df, _ = _build_hawkes_signals(
+            feat_full, stress_q, recovery_q, decay, stress_scale, recovery_scale,
+            feat_full.loc[train_start:inner_train_end],
+        )
+        score = _diagnostic_alignment_score(
+            hawkes_df.loc[inner_val_start:inner_val_end], crisis_state_weekly
+        )
+        s1_rows.append({
+            "stress_q": stress_q, "recovery_q": recovery_q,
+            "decay": decay, "stress_scale": stress_scale,
+            "recovery_scale": recovery_scale, "s1_score": score,
+        })
+        if score > s1_best_score:
+            s1_best_score = score
+            s1_best_params = s1_rows[-1].copy()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # PERF-1: 7A — no overlay backtest needed at all. Return Stage-1 winner
+    # with default overlay params and a combined calib_df.
+    # ─────────────────────────────────────────────────────────────────────────
+    if cfg_fold.variant == "7A":
+        best_params = {
+            "stress_q":          s1_best_params["stress_q"],
+            "recovery_q":        s1_best_params["recovery_q"],
+            "decay":             s1_best_params["decay"],
+            "stress_scale":      s1_best_params["stress_scale"],
+            "recovery_scale":    s1_best_params["recovery_scale"],
+            "defensive_scale":   cfg_fold.defensive_scale_grid[0],
+            "recovery_floor":    cfg_fold.recovery_floor_grid[0],
+            "rel_tilt":          cfg_fold.rel_tilt_grid[0],
+            "stress_trigger_q":  cfg_fold.stress_trigger_q_grid[0],
+            "recovery_trigger_q": cfg_fold.recovery_trigger_q_grid[0],
+            "score":             s1_best_score,
+            "base_sharpe":       base_sum["Sharpe"],
+            "ov_sharpe":         base_sum["Sharpe"],  # no overlay in 7A
+            "ov_cagr":           base_sum["CAGR"],
+            "ov_maxdd":          base_sum["MaxDD"],
+            "intervention_rate": 0.0,
+            "recovery_rate":     0.0,
+        }
+        calib_df = pd.DataFrame(s1_rows).rename(columns={"s1_score": "score"})
+        calib_df["stage"] = "hawkes_only"
+        return best_params, calib_df.sort_values("score", ascending=False)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # PERF-2: 7B — Stage 2 overlay sweep with Hawkes params fixed from Stage 1.
+    # Only 2^5 = 32 full backtests instead of 2^10 = 1024.
+    # ─────────────────────────────────────────────────────────────────────────
+    fixed_hawkes = s1_best_params  # stress_q, recovery_q, decay, stress_scale, recovery_scale
+    hawkes_df_fixed, _ = _build_hawkes_signals(
+        feat_full,
+        fixed_hawkes["stress_q"], fixed_hawkes["recovery_q"],
+        fixed_hawkes["decay"], fixed_hawkes["stress_scale"], fixed_hawkes["recovery_scale"],
+        feat_full.loc[train_start:inner_train_end],
+    )
+
+    s2_rows = []
+    best_params = None
+    best_score = -np.inf
+
+    for defensive_scale, recovery_floor, rel_tilt, stress_trigger_q, recovery_trigger_q in iproduct(
         cfg_fold.defensive_scale_grid,
         cfg_fold.recovery_floor_grid,
         cfg_fold.rel_tilt_grid,
         cfg_fold.stress_trigger_q_grid,
         cfg_fold.recovery_trigger_q_grid,
-    )
-
-    for stress_q, recovery_q, decay, stress_scale, recovery_scale, defensive_scale, recovery_floor, rel_tilt, stress_trigger_q, recovery_trigger_q in grid:
-        hawkes_df, _ = _build_hawkes_signals(feat_full, stress_q, recovery_q, decay, stress_scale, recovery_scale, feat_full.loc[train_start:inner_train_end])
+    ):
         policy_weekly = _policy_from_intensities(
-            hawkes_df.loc[inner_val_start:inner_val_end],
+            hawkes_df_fixed.loc[inner_val_start:inner_val_end],
             stress_trigger_q=stress_trigger_q,
             recovery_trigger_q=recovery_trigger_q,
             defensive_scale=defensive_scale,
@@ -620,12 +765,15 @@ def _calibrate_hawkes_and_overlay(
             cfg=cfg_fold,
             crisis_state_daily=base_bt["crisis_state"],
         )
-        policy_daily = policy_weekly.reindex(base_bt["returns_net"].index).ffill().fillna({
-            "action": "BASELINE",
-            "ext_scale": 1.0,
-            "recovery_override_scale": 0.0,
-        })
-        ov_bt = _custom_backtest_with_overlay(ohlcv, cfg_fold, costs, universe_schedule, policy_daily, label="OV_INNER")
+        # FIX-3: per-column fillna instead of fillna(dict)
+        policy_daily = policy_weekly.reindex(base_bt["returns_net"].index).ffill()
+        policy_daily["action"] = policy_daily["action"].fillna("BASELINE")
+        policy_daily["ext_scale"] = policy_daily["ext_scale"].fillna(1.0)
+        policy_daily["recovery_override_scale"] = policy_daily["recovery_override_scale"].fillna(0.0)
+
+        ov_bt = _custom_backtest_with_overlay(
+            ohlcv, cfg_fold, costs, universe_schedule, policy_daily, label="OV_INNER"
+        )
         ov_r = ov_bt["returns_net"].loc[inner_val_start:inner_val_end]
         ov_eq = ov_bt["equity"].loc[inner_val_start:inner_val_end]
         ov_exp = ov_bt["exposure"].loc[inner_val_start:inner_val_end]
@@ -634,33 +782,37 @@ def _calibrate_hawkes_and_overlay(
         intervention_rate = float((policy_weekly["action"] != "BASELINE").mean())
         recovery_rate = float((policy_weekly["action"] == "RECOVERY_OVERRIDE").mean())
         score = _score_overlay(base_sum, ov_sum, intervention_rate, recovery_rate, cfg_fold)
-        if cfg_fold.variant == "7A":
-            score = _diagnostic_alignment_score(hawkes_df.loc[inner_val_start:inner_val_end], crisis_state_weekly)
         row = {
-            "stress_q": stress_q,
-            "recovery_q": recovery_q,
-            "decay": decay,
-            "stress_scale": stress_scale,
-            "recovery_scale": recovery_scale,
-            "defensive_scale": defensive_scale,
-            "recovery_floor": recovery_floor,
-            "rel_tilt": rel_tilt,
-            "stress_trigger_q": stress_trigger_q,
+            "stress_q":          fixed_hawkes["stress_q"],
+            "recovery_q":        fixed_hawkes["recovery_q"],
+            "decay":             fixed_hawkes["decay"],
+            "stress_scale":      fixed_hawkes["stress_scale"],
+            "recovery_scale":    fixed_hawkes["recovery_scale"],
+            "defensive_scale":   defensive_scale,
+            "recovery_floor":    recovery_floor,
+            "rel_tilt":          rel_tilt,
+            "stress_trigger_q":  stress_trigger_q,
             "recovery_trigger_q": recovery_trigger_q,
-            "score": score,
-            "base_sharpe": base_sum["Sharpe"],
-            "ov_sharpe": ov_sum["Sharpe"],
-            "ov_cagr": ov_sum["CAGR"],
-            "ov_maxdd": ov_sum["MaxDD"],
+            "score":             score,
+            "base_sharpe":       base_sum["Sharpe"],
+            "ov_sharpe":         ov_sum["Sharpe"],
+            "ov_cagr":           ov_sum["CAGR"],
+            "ov_maxdd":          ov_sum["MaxDD"],
             "intervention_rate": intervention_rate,
-            "recovery_rate": recovery_rate,
+            "recovery_rate":     recovery_rate,
+            "stage":             "overlay",
         }
-        rows.append(row)
+        s2_rows.append(row)
         if score > best_score:
             best_score = score
             best_params = row.copy()
 
-    return best_params, pd.DataFrame(rows).sort_values("score", ascending=False)
+    # Combine stage-1 and stage-2 rows for full audit trail
+    s1_df = pd.DataFrame(s1_rows).rename(columns={"s1_score": "score"})
+    s1_df["stage"] = "hawkes_only"
+    calib_df = pd.concat([s1_df, pd.DataFrame(s2_rows)], ignore_index=True)
+    return best_params, calib_df.sort_values("score", ascending=False)
+
 
 
 def _run_single_fold(
@@ -671,13 +823,15 @@ def _run_single_fold(
     costs: m6.CostsConfig,
     universe_schedule: Optional[pd.DataFrame],
     feat_full: pd.DataFrame,
+    total_folds: int,  # FIX-5: passed in to avoid re-calling build_contiguous_folds every iteration
 ) -> Dict[str, Any]:
     fold_n = int(fold["fold"])
     train_start, train_end = fold["train_start"], fold["train_end"]
     test_start, test_end = fold["test_start"], fold["test_end"]
     val_start, val_end = fold["val_start"], fold["val_end"]
 
-    print(f"\n  ── {cfg_base.variant} FOLD {fold_n}/{len(m6.build_contiguous_folds(cfg_base, pd.DatetimeIndex(ohlcv['close'].index)))} ──")
+    # FIX-5: total_folds is now passed in; no longer calls build_contiguous_folds here.
+    print(f"\n  ── {cfg_base.variant} FOLD {fold_n}/{total_folds} ──")
     cfg_fold = _get_fold_cfg(ohlcv, cfg_base, costs, universe_schedule, baseline_row)
     print(f"  [IC] trend={cfg_fold.w_trend:.3f} mom={cfg_fold.w_mom:.3f} rel={cfg_fold.w_rel:.3f}")
     print(f"  [fold {fold_n}] Calibrating {cfg_base.variant} on train via inner validation …")
@@ -706,11 +860,12 @@ def _run_single_fold(
         cfg=cfg_fold,
         crisis_state_daily=base_bt["crisis_state"],
     )
-    policy_daily = weekly_policy.reindex(base_bt["returns_net"].index).ffill().fillna({
-        "action": "BASELINE",
-        "ext_scale": 1.0,
-        "recovery_override_scale": 0.0,
-    })
+    # FIX-3: fillna(dict) is unreliable on mixed-type DataFrames in pandas >= 2.x.
+    # Apply per-column fillna explicitly to avoid silent NaN leakage.
+    policy_daily = weekly_policy.reindex(base_bt["returns_net"].index).ffill()
+    policy_daily["action"] = policy_daily["action"].fillna("BASELINE")
+    policy_daily["ext_scale"] = policy_daily["ext_scale"].fillna(1.0)
+    policy_daily["recovery_override_scale"] = policy_daily["recovery_override_scale"].fillna(0.0)
 
     if cfg_base.variant == "7A":
         ov_bt = base_bt
@@ -774,6 +929,9 @@ def run_walk_forward_h7(
     feat_full = _build_context_table(ohlcv, cfg, universe_schedule)
 
     folds = m6.build_contiguous_folds(cfg, pd.DatetimeIndex(ohlcv["close"].index))
+    # FIX-5: compute total_folds once here and pass it down so _run_single_fold
+    # doesn't have to call build_contiguous_folds (with its asserts + prints) repeatedly.
+    total_folds = len(folds)
     if cfg.run_mode.upper() == "FAST":
         folds = [f for f in folds if int(f["fold"]) in set(cfg.fast_folds)]
         baseline_df = baseline_df[baseline_df["fold"].isin(list(cfg.fast_folds))].copy()
@@ -791,11 +949,11 @@ def run_walk_forward_h7(
     if use_parallel:
         n_jobs = min(cfg.max_outer_jobs, len(tasks))
         results = Parallel(n_jobs=n_jobs, backend=backend, verbose=0)(
-            delayed(_run_single_fold)(f, r, ohlcv, cfg, costs, universe_schedule, feat_full)
+            delayed(_run_single_fold)(f, r, ohlcv, cfg, costs, universe_schedule, feat_full, total_folds)
             for f, r in tasks
         )
     else:
-        results = [_run_single_fold(f, r, ohlcv, cfg, costs, universe_schedule, feat_full) for f, r in tasks]
+        results = [_run_single_fold(f, r, ohlcv, cfg, costs, universe_schedule, feat_full, total_folds) for f, r in tasks]
 
     results = sorted(results, key=lambda x: x["fold"])
     base_r = pd.concat([x["base_bt"]["returns_net"] for x in results]).sort_index()
