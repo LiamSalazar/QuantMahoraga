@@ -1,0 +1,98 @@
+MAHORAGA 7C.1 — FINAL REPORT
+==============================================================================
+
+═══════════════════════════════════════════════════════════════════════════════
+  MAHORAGA 7C.1 — HAWKES + DUAL-ML LAYER OVER MAHORAGA 6.1
+───────────────────────────────────────────────────────────────────────────────
+  • Mahoraga 6.1 remains frozen as the execution / risk baseline.
+  • Hawkes-inspired stress / recovery intensity is retained as the structural
+    regime layer from Mahoraga 7A.
+  • ML is used only to predict baseline fragility and select sparse, bounded
+    interventions.
+  • Allowed actions:
+      BASELINE / REL_TILT / DEFENSIVE_LIGHT / RECOVERY_OVERRIDE
+  • No price prediction. No replacing the baseline.
+═══════════════════════════════════════════════════════════════════════════════
+
+
+OOS COMPARISON
+  BASELINE CAGR=16.66%  Sharpe=0.993  MaxDD=-67.51%
+  H7C1    CAGR=16.69%  Sharpe=0.997  MaxDD=-67.19%
+
+SELECTION AUDIT
+             Method  MeanSharpe  MeanCAGR%  MeanMaxDD%  MeanInterventionRate  MeanFragilityRate
+BASELINE_6_1_FROZEN     0.96940     22.096     -16.516               0.00000            0.00000
+               H7C1     1.00896     22.436     -15.740               0.18576            0.18576
+
+FOLD SUMMARY
+ fold                 train                  test  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  H7C1_CAGR%  H7C1_Sharpe  H7C1_MaxDD%  DeltaSharpe  InterventionRate  RecoveryRate  MissedReboundQQQ  FragilityRate  RecoveryOppRate
+    1 2006-01-01→2013-12-31 2017-01-03→2018-12-31       12.79       0.8611       -12.63       13.61       0.9653       -11.46       0.1042            0.2647           0.0             39.17         0.2647           0.0490
+    2 2006-01-01→2015-12-31 2019-01-02→2020-12-31       23.24       1.1750       -21.16       22.92       1.2006       -20.37       0.0256            0.1800           0.0             85.96         0.1800           0.1000
+    3 2006-01-01→2017-12-29 2021-01-04→2022-12-30        4.53       0.3594       -15.41        4.53       0.3594       -15.41       0.0000            0.0000           0.0              7.45         0.0000           0.3960
+    4 2006-01-01→2019-12-31 2023-01-03→2024-06-28       66.95       2.2034       -17.77       67.14       2.2099       -17.77       0.0064            0.0263           0.0              0.00         0.0263           0.0000
+    5 2006-01-01→2021-12-31 2024-07-01→2026-02-20        2.97       0.2481       -15.61        3.98       0.3096       -13.69       0.0615            0.4578           0.0             70.70         0.4578           0.1205
+
+REGIME COMPARISON
+Regime  Days  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  7C.1_CAGR%  7C.1_Sharpe  7C.1_MaxDD%  DeltaSharpe
+NORMAL  3076       48.90       2.4285       -51.28       48.80       2.4348       -51.28       0.0063
+STRESS  1227      -12.15      -0.6076       -98.75      -11.97      -0.5984       -98.69       0.0092
+ PANIC  1013      -21.58      -1.6286       -99.24      -21.50      -1.6280       -99.22       0.0006
+
+FEATURE IMPORTANCE (mean across folds)
+    model             feature  importance
+fragility    base_total_scale    0.094338
+fragility   turb_scale_weekly    0.082116
+fragility    intensity_spread    0.073222
+fragility       rel_minus_mom    0.066310
+fragility       base_exposure    0.059168
+fragility       base_turnover    0.056631
+fragility            mom_mean    0.051956
+fragility    stress_intensity    0.051650
+fragility         avg_corr_21    0.048410
+fragility  recovery_intensity    0.043077
+fragility         avg_corr_63    0.042797
+fragility          qqq_vol_21    0.035853
+fragility     rel_minus_trend    0.034521
+fragility            rel_mean    0.029874
+fragility        rel_top_mean    0.027420
+fragility         qqq_ret_21d    0.027000
+fragility           vix_level    0.026893
+fragility        qqq_drawdown    0.025639
+fragility          trend_mean    0.022433
+fragility         xs_disp_21d    0.021127
+fragility         breadth_63d    0.019608
+fragility          xs_disp_5d    0.016799
+fragility            vix_z_63    0.016224
+fragility          qqq_ret_5d    0.014250
+fragility crisis_scale_weekly    0.006394
+fragility crisis_state_weekly    0.005682
+fragility   corr_scale_weekly    0.000505
+fragility   corr_state_weekly    0.000106
+ recovery    intensity_spread    0.188235
+ recovery    base_total_scale    0.174295
+ recovery       rel_minus_mom    0.090284
+ recovery       base_exposure    0.084834
+ recovery    stress_intensity    0.070128
+ recovery  recovery_intensity    0.056256
+ recovery   turb_scale_weekly    0.044724
+ recovery          qqq_vol_21    0.043565
+ recovery            mom_mean    0.037640
+ recovery          trend_mean    0.033420
+ recovery     rel_minus_trend    0.028593
+ recovery        qqq_drawdown    0.025520
+ recovery       base_turnover    0.018849
+ recovery         avg_corr_63    0.018808
+ recovery           vix_level    0.016323
+ recovery         avg_corr_21    0.011181
+ recovery          qqq_ret_5d    0.007372
+ recovery        rel_top_mean    0.006911
+ recovery            rel_mean    0.006631
+ recovery          xs_disp_5d    0.006028
+ recovery         qqq_ret_21d    0.005962
+ recovery crisis_scale_weekly    0.005661
+ recovery            vix_z_63    0.005492
+ recovery         breadth_63d    0.005265
+ recovery         xs_disp_21d    0.004078
+ recovery crisis_state_weekly    0.003725
+ recovery   corr_scale_weekly    0.000172
+ recovery   corr_state_weekly    0.000048
