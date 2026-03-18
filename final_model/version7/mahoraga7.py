@@ -426,7 +426,12 @@ def _custom_backtest_with_overlay(
 
     crisis_scale, crisis_state = m6.compute_crisis_gate(qqq, cfg)
     turb_scale = m6.compute_turbulence(close, volume, qqq, cfg)
-    corr_scale, corr_rho, corr_state = m6.compute_corr_shield(close, cfg)
+    vix = None
+    if getattr(cfg, "bench_vix", None) in ohlcv.get("close", pd.DataFrame()).columns:
+        vix = m6.to_s(ohlcv["close"][cfg.bench_vix].reindex(idx).ffill(), "VIX")
+    corr_rho, corr_scale, corr_state = m6.compute_corr_shield_series(
+        rets, idx, cfg, univ_master, use_pit_universe, universe_schedule=universe_schedule, vix=vix
+    )
 
     score_base = m6.compute_scores(close, qqq, cfg)
     cfg_rel = _make_rel_tilt_cfg(cfg, float(daily_policy["rel_tilt"].dropna().iloc[0])) if daily_policy["rel_tilt"].notna().any() else _make_rel_tilt_cfg(cfg, 0.60)
