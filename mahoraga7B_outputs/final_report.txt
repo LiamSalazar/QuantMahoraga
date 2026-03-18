@@ -1,0 +1,37 @@
+MAHORAGA 7B — FINAL REPORT
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  MAHORAGA 7 — HAWKES-INSPIRED REGIME LAYER OVER MAHORAGA 6.1
+───────────────────────────────────────────────────────────────────────────────
+  • Mahoraga 6.1 remains frozen as the execution / risk baseline.
+  • 7A adds diagnostics only: regime events + Hawkes-like stress/recovery intensity.
+  • 7B adds a bounded overlay on top of 6.1.
+  • No price prediction. No replacing the baseline.
+  • Goal: react faster to clustered stress and faster to clustered recovery,
+    especially in folds where the baseline is fragile.
+═══════════════════════════════════════════════════════════════════════════════
+
+
+OOS SUMMARY
+BASELINE  CAGR=16.66%  Sharpe=0.993  MaxDD=-67.51%
+7B  CAGR=16.38%  Sharpe=0.996  MaxDD=-66.72%
+
+SELECTION AUDIT
+             Method  MeanSharpe  MeanCAGR%  MeanMaxDD%  MeanInterventionRate
+BASELINE_6_1_FROZEN     0.96940     22.096     -16.516               0.00000
+                 7B     0.94198     21.646     -16.404               0.36254
+
+FOLD RESULTS
+ fold                 train                   val                  test  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  7B_CAGR%  7B_Sharpe  7B_MaxDD%  DeltaSharpe  InterventionRate  RecoveryRate  MissedReboundQQQ
+    1 2006-01-01→2013-12-31 2015-01-02→2016-12-30 2017-01-03→2018-12-31       12.79       0.8611       -12.63     10.92     0.7592     -12.63      -0.1019            0.2549        0.0098             39.17
+    2 2006-01-01→2015-12-31 2017-01-03→2018-12-31 2019-01-02→2020-12-31       23.24       1.1750       -21.16     20.28     1.0499     -21.13      -0.1251            0.3500        0.0000             85.96
+    3 2006-01-01→2017-12-29 2019-01-02→2020-12-31 2021-01-04→2022-12-30        4.53       0.3594       -15.41      3.21     0.2794     -16.94      -0.0800            0.5743        0.0000              7.45
+    4 2006-01-01→2019-12-31 2021-01-04→2022-12-30 2023-01-03→2024-06-28       66.95       2.2034       -17.77     68.05     2.2311     -17.82       0.0277            0.3684        0.0000              0.00
+    5 2006-01-01→2021-12-31 2023-01-03→2024-06-28 2024-07-01→2026-02-20        2.97       0.2481       -15.61      5.77     0.3903     -13.50       0.1422            0.2651        0.0000             70.70
+
+REGIME COMPARISON
+Regime  Days  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  7B_CAGR%  7B_Sharpe  7B_MaxDD%  DeltaSharpe
+NORMAL  3076       48.90       2.4285       -51.28     47.88     2.4432     -51.28       0.0147
+STRESS  1227      -12.15      -0.6076       -98.75    -11.70    -0.5933     -98.58       0.0143
+ PANIC  1013      -21.58      -1.6286       -99.24    -21.43    -1.6541     -99.21      -0.0255
