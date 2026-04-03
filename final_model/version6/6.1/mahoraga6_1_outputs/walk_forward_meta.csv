@@ -1,2 +1,0 @@
-oos_label,n_folds,oos_start,oos_end,any_partial_fold,total_oos_days,sweep_grid_combos,parallel_sweep,universe_mode,data_quality_layer,ml_regime_gate,final_selection_method
-OOS_continuous,5,2017-01-03,2026-02-20,False,2295,72,True,canonical,True,False,last_fold_winner

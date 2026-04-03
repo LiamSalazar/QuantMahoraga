@@ -1,3 +1,0 @@
-Mode,CAGR%,Sharpe,MaxDD%,Calmar,AvgExp%
-RESEARCH (keep_cash=True),15.14,0.866,-30.7,0.493,54.0
-AGGRESSIVE (keep_cash=False),16.64,0.847,-36.52,0.456,59.4

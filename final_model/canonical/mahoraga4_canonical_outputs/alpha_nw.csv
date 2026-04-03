@@ -1,4 +1,0 @@
-Label,conditional,alpha_ann,t_alpha,p_alpha,beta,R2,NW_lags,n_obs,sig_5pct,sig_1pct
-MAHORAGA_4,False,0.096852,2.69,0.00714,0.4129,0.2399,9,5316,True,True
-OOS_continuous,False,0.121366,1.964,0.049539,0.4581,0.2638,8,2295,True,False
-MAHORAGA_4_conditional,True,0.111086,2.694,0.007068,0.7313,0.4257,9,4078,True,True

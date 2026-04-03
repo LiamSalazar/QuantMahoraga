@@ -1,3 +1,0 @@
-Mode,CAGR%,Vol%,Sharpe,MaxDD%,AvgExp%,TurnAnn,ShieldActivePct,HardKillDays,MinCorrScale,MeanCorrScale,PanicDays,PanicCAGR%,PanicSharpe,PanicMaxDD%,PanicAvgExp%
-CORR_SHIELD_ON,15.144,18.183,0.8664,-30.704,53.97,7.676,7.17,0,0.0,0.9893,1013,-28.747,-2.2227,-74.266,24.66
-CORR_SHIELD_OFF,15.165,18.211,0.8663,-30.875,54.09,7.669,0.0,0,1.0,1.0,1013,-28.963,-2.2273,-74.578,24.95

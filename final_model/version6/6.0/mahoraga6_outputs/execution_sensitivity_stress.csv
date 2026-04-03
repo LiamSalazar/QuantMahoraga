@@ -1,6 +1,0 @@
-Scenario,Stress_Type,CAGR%,Sharpe,MaxDD%,Calmar,TurnAnn,FinalEq
-BASE,baseline,15.14,0.866,-30.7,0.493,7.68,1958442.0
-COST_SENSITIVITY_×2,cost_sensitivity,14.0,0.812,-31.7,0.442,7.68,1586907.0
-COST_SENSITIVITY_×3,cost_sensitivity,12.87,0.757,-32.69,0.394,7.68,1285743.0
-SLIPPAGE_SENSITIVITY,slippage_sensitivity,15.01,0.86,-30.82,0.487,7.68,1911486.0
-PANIC_EXECUTION_HEAVY,panic_execution,14.75,0.847,-31.05,0.475,7.68,1820919.0

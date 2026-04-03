@@ -1,6 +1,0 @@
-TestType,Mode,w_trend,w_mom,w_rel,SameAsEqual,CAGR%,Vol%,Sharpe,MaxDD%,Calmar,AvgExp%,TurnAnn,Note
-ablation,IC_weights,0.333333,0.333333,0.333333,True,15.144,18.183,0.8664,-30.704,0.4932,53.97,7.676,IC weights equal to uniform in this run; no delta vs equal weights should be expected.
-ablation,EQUAL_WEIGHTS,0.333333,0.333333,0.333333,True,15.144,18.183,0.8664,-30.704,0.4932,53.97,7.676,
-plumbing_diag,TREND_ONLY,1.0,0.0,0.0,False,7.835,13.522,0.6255,-27.099,0.2891,48.57,4.763,
-plumbing_diag,MOM_ONLY,0.0,1.0,0.0,False,13.402,18.307,0.7784,-34.644,0.3868,53.14,7.718,
-plumbing_diag,REL_ONLY,0.0,0.0,1.0,False,14.653,17.848,0.8554,-32.764,0.4472,55.7,8.709,

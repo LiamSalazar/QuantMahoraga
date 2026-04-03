@@ -1,3 +1,0 @@
-Label,alpha_ann,t_alpha,p_alpha,beta_mkt,beta_smb,beta_hml,beta_rmw,beta_cma,beta_umd,R2_adj
-MAHORAGA_5,0.105982,2.879,0.003984,0.3831,0.0552,-0.1441,-0.1041,-0.3234,0.2171,0.2351
-OOS_continuous,0.129052,2.091,0.036513,0.3939,0.0166,-0.2299,0.0307,-0.3207,0.1857,0.2633
