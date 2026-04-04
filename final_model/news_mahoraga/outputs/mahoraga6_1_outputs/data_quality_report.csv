@@ -1,24 +1,3 @@
-ticker,first_valid_date,history_days,missing_close_pct,zero_volume_pct,stale_price_streak,eligible_data_quality,dq_reason
-AAPL,2005-01-03,5316,0.0,0.0,1,True,ok
-ADBE,2005-01-03,5316,0.0,0.0,1,True,ok
-AMAT,2005-01-03,5316,0.0,0.0,3,True,ok
-AMD,2005-01-03,5316,0.0,0.000188,2,True,ok
-AMZN,2005-01-03,5316,0.0,0.0,2,True,ok
-ARM,2023-09-14,610,0.0,0.0,1,True,ok
-ASML,2005-01-03,5316,0.0,0.0,1,True,ok
-AVGO,2009-08-06,4160,0.0,0.0,1,True,ok
-CRM,2005-01-03,5316,0.0,0.0,1,True,ok
-GOOGL,2005-01-03,5316,0.0,0.0,1,True,ok
-INTC,2005-01-03,5316,0.0,0.0,2,True,ok
-LRCX,2005-01-03,5316,0.0,0.0,1,True,ok
-META,2012-05-18,3458,0.0,0.0,1,True,ok
-MSFT,2005-01-03,5316,0.0,0.0,1,True,ok
-MU,2005-01-03,5316,0.0,0.0,1,True,ok
-NFLX,2005-01-03,5316,0.0,0.0,2,True,ok
-NOW,2012-06-29,3429,0.0,0.0,1,True,ok
-NVDA,2005-01-03,5316,0.0,0.0,1,True,ok
-PLTR,2020-09-30,1353,0.0,0.0,1,True,ok
-QCOM,2005-01-03,5316,0.0,0.0,1,True,ok
-SHOP,2015-05-20,2704,0.0,0.00037,1,True,ok
-SMCI,2007-03-29,4754,0.0,0.0,4,True,ok
-TSM,2005-01-03,5316,0.0,0.0,2,True,ok
+version https://git-lfs.github.com/spec/v1
+oid sha256:8417f8b3ce2d82c05201355a3f28de13c0fc301317ee4834fb10a8a00dfd139f
+size 1045

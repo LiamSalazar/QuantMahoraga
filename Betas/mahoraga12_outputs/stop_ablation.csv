@@ -1,3 +1,3 @@
-Mode,CAGR%,Sharpe,MaxDD%,Calmar,AvgExp%
-RESEARCH (keep_cash=True),20.9,1.052,-27.45,0.762,52.0
-AGGRESSIVE (keep_cash=False),22.82,0.993,-31.28,0.73,59.9
+version https://git-lfs.github.com/spec/v1
+oid sha256:49727866c13c3b12fa8b761860bb32f176866f167ef0fdae3932299f954d6506
+size 156

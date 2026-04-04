@@ -1,3 +1,3 @@
-SR,CI_lo,CI_hi,SE,t_stat,p_val,note
-1.1549,0.7276,1.5822,0.218,5.297,0.0,Asymptotic (delta-method); underestimates SE under autocorrelation
-1.1562,0.5059,1.8065,0.3318,3.485,0.000493,Asymptotic (delta-method); underestimates SE under autocorrelation
+version https://git-lfs.github.com/spec/v1
+oid sha256:8da5146da0cf7738211e04c03adfe6ee2034cea88b8006f103afe7c5e830a84e
+size 253

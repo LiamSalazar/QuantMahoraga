@@ -1,4 +1,3 @@
-Label,conditional,alpha_ann,t_alpha,p_alpha,beta,R2,NW_lags,n_obs,sig_5pct,sig_1pct
-MAHORAGA_1.2,False,0.158944,3.814,0.00014,0.3925,0.1811,9,5316,True,True
-OOS_stitched_with_gaps,False,-0.005001,-0.065,0.94852,0.6621,0.307,7,1416,False,False
-MAHORAGA_1.2_conditional,True,0.194955,3.913,9e-05,0.6975,0.3227,9,4086,True,True
+version https://git-lfs.github.com/spec/v1
+oid sha256:b7c085278bf21bc2c35b0368c1def8e2791b74b2fae9a269737ba3f3a0c7104e
+size 329

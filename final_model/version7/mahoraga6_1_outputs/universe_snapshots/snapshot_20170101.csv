@@ -1,24 +1,3 @@
-ticker,eligible,reason,liq_size_proxy,addv_proxy,vol_coverage,in_universe,recon_date,prior_member,entered,exited
-AAPL,True,eligible,2958422737.9496512,3331690035.6011286,1.0,True,2017-01-01,True,False,False
-AMZN,True,eligible,2787863832.248942,3220431069.8681784,1.0,True,2017-01-01,True,False,False
-META,True,eligible,2368507601.5615335,2624302473.4402003,1.0,True,2017-01-01,True,False,False
-NVDA,True,eligible,1827097195.0988452,1318163733.010148,1.0,True,2017-01-01,True,False,False
-MSFT,True,eligible,1335222579.9493027,1484969721.724695,1.0,True,2017-01-01,True,False,False
-GOOGL,True,eligible,1288624293.8908894,1483575969.7225661,1.0,True,2017-01-01,True,False,False
-NFLX,True,eligible,737351590.6027476,1023476986.8880529,1.0,True,2017-01-01,True,False,False
-MU,True,eligible,583246980.8532969,502067323.52648234,1.0,True,2017-01-01,True,False,False
-AMD,True,eligible,548449159.0280914,411769425.47384596,1.0,False,2017-01-01,False,False,False
-INTC,True,eligible,542608355.1851209,595714960.0218213,1.0,True,2017-01-01,True,False,False
-CRM,True,eligible,473162604.9671936,573454017.7116758,1.0,False,2017-01-01,False,False,False
-QCOM,True,eligible,397906018.60112506,479847006.6359444,1.0,True,2017-01-01,True,False,False
-AVGO,True,eligible,391486757.1169853,346462954.27476794,1.0,False,2017-01-01,False,False,False
-AMAT,True,eligible,304862330.3212611,302681104.82499564,1.0,False,2017-01-01,False,False,False
-ADBE,True,eligible,279442270.36066693,257772424.3435451,1.0,False,2017-01-01,False,False,False
-LRCX,True,eligible,179541525.93421936,226683609.21190655,1.0,False,2017-01-01,False,False,False
-TSM,True,eligible,129817915.35512924,147174319.27240765,1.0,False,2017-01-01,False,False,False
-NOW,True,eligible,105592887.03336716,137475821.3005066,1.0,False,2017-01-01,False,False,False
-ASML,True,eligible,68010500.6539917,68662500.51761204,1.0,False,2017-01-01,False,False,False
-ARM,False,not_live_yet<2023-09-14>,0.0,0.0,,False,2017-01-01,False,False,False
-PLTR,False,seasoning_fail,0.0,0.0,,False,2017-01-01,False,False,False
-SHOP,False,addv_fail,0.0,31204156.403806474,,False,2017-01-01,False,False,False
-SMCI,False,addv_fail,0.0,8308359.230317767,,False,2017-01-01,False,False,False
+version https://git-lfs.github.com/spec/v1
+oid sha256:046854e72fbd03865271aa17c8b54c49199fe0ec404adf9e0a104c914e7a7d25
+size 2226

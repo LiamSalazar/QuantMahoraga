@@ -1,24 +1,3 @@
-ticker,eligible,reason,liq_size_proxy,addv_proxy,vol_coverage,in_universe,recon_date,prior_member,entered,exited
-AAPL,True,eligible,17306760674.99695,13453732861.13325,1.0,True,2020-04-01,True,False,False
-AMZN,True,eligible,13251979943.259176,10503660313.266088,1.0,True,2020-04-01,True,False,False
-MSFT,True,eligible,10496481980.461172,7540064583.765205,1.0,True,2020-04-01,True,False,False
-NVDA,True,eligible,4729631807.948049,3454321369.308986,1.0,True,2020-04-01,True,False,False
-META,True,eligible,4553621179.076182,3931096047.6018753,1.0,True,2020-04-01,True,False,False
-AMD,True,eligible,4262243684.5088706,3535144396.7012196,1.0,True,2020-04-01,True,False,False
-GOOGL,True,eligible,3963156313.6522927,3198406476.164197,1.0,True,2020-04-01,True,False,False
-NFLX,True,eligible,3072836667.3674264,2744640300.2765594,1.0,True,2020-04-01,True,False,False
-INTC,True,eligible,1928175114.4626362,1579611386.4141011,1.0,True,2020-04-01,True,False,False
-ADBE,True,eligible,1720000503.0684407,1223798848.2326448,1.0,False,2020-04-01,False,False,False
-MU,True,eligible,1612027205.1051075,1471186288.5965922,1.0,True,2020-04-01,True,False,False
-CRM,True,eligible,1545011233.2773845,1181489915.3219314,1.0,False,2020-04-01,False,False,False
-SHOP,True,eligible,1321266114.872996,1173239607.3386784,1.0,False,2020-04-01,False,False,False
-AVGO,True,eligible,975406209.3560537,816007982.4833643,1.0,False,2020-04-01,False,False,False
-QCOM,True,eligible,926680712.1789297,844752762.5211686,1.0,False,2020-04-01,False,False,False
-NOW,True,eligible,869417475.8221308,726346336.9788518,1.0,False,2020-04-01,False,False,False
-LRCX,True,eligible,665115010.8357748,578281181.2243387,1.0,False,2020-04-01,False,False,False
-AMAT,True,eligible,586694582.6007334,516930565.89459616,1.0,False,2020-04-01,False,False,False
-TSM,True,eligible,543647236.5868505,480159767.30747527,1.0,False,2020-04-01,False,False,False
-ASML,True,eligible,371231485.3420003,292290132.90434337,1.0,False,2020-04-01,False,False,False
-ARM,False,not_live_yet<2023-09-14>,0.0,0.0,,False,2020-04-01,False,False,False
-PLTR,False,seasoning_fail,0.0,0.0,,False,2020-04-01,False,False,False
-SMCI,False,addv_fail,0.0,8788815.485555029,,False,2020-04-01,False,False,False
+version https://git-lfs.github.com/spec/v1
+oid sha256:b382b22bc7d9d9546879896e7dca416a5beaa748bf8058566b496a95eaf9103c
+size 2241

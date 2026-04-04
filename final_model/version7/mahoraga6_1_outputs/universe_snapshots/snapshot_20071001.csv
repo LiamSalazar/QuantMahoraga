@@ -1,24 +1,3 @@
-ticker,eligible,reason,liq_size_proxy,addv_proxy,vol_coverage,in_universe,recon_date,prior_member,entered,exited
-AAPL,True,eligible,4436238883.02353,4466153032.426399,1.0,True,2007-10-01,True,False,False
-GOOGL,True,eligible,1824849596.475055,2293983437.4490676,1.0,True,2007-10-01,True,False,False
-MSFT,True,eligible,1084359163.764407,1205080285.2170005,1.0,True,2007-10-01,True,False,False
-INTC,True,eligible,926915423.2137457,1010067413.2826018,1.0,True,2007-10-01,True,False,False
-AMZN,True,eligible,533973401.9793351,713318073.7104264,1.0,True,2007-10-01,True,False,False
-QCOM,True,eligible,467902002.9848035,553073466.557978,1.0,True,2007-10-01,True,False,False
-NVDA,True,eligible,410944249.3012706,410705476.63945997,1.0,True,2007-10-01,True,False,False
-ADBE,True,eligible,311541504.37806445,293490420.3140259,1.0,True,2007-10-01,True,False,False
-AMD,True,eligible,268665396.8096288,360846961.62772405,1.0,True,2007-10-01,True,False,False
-AMAT,True,eligible,261002632.14097658,380505708.5641861,1.0,True,2007-10-01,True,False,False
-MU,True,eligible,184794696.84335074,259544510.35487765,1.0,False,2007-10-01,False,False,False
-LRCX,True,eligible,88021203.11511357,120112472.57004087,1.0,False,2007-10-01,False,False,False
-CRM,True,eligible,69557165.3070577,74529003.59194316,1.0,False,2007-10-01,False,False,False
-TSM,True,eligible,65353474.64585482,85501563.69245164,1.0,False,2007-10-01,False,False,False
-ASML,True,eligible,43595154.56512063,57762563.81006998,1.0,False,2007-10-01,False,False,False
-ARM,False,not_live_yet<2023-09-14>,0.0,0.0,,False,2007-10-01,False,False,False
-AVGO,False,seasoning_fail,0.0,0.0,,False,2007-10-01,False,False,False
-META,False,seasoning_fail,0.0,0.0,,False,2007-10-01,False,False,False
-NFLX,False,addv_fail,0.0,26920473.082588777,,False,2007-10-01,False,False,False
-PLTR,False,seasoning_fail,0.0,0.0,,False,2007-10-01,False,False,False
-NOW,False,seasoning_fail,0.0,0.0,,False,2007-10-01,False,False,False
-SHOP,False,seasoning_fail,0.0,0.0,,False,2007-10-01,False,False,False
-SMCI,False,addv_fail,0.0,1246205.3945717358,,False,2007-10-01,False,False,False
+version https://git-lfs.github.com/spec/v1
+oid sha256:f5ec069a64d8c2ed5e61c7d347b9db5ff23edba7908e0b772d2a80caf31e3ae8
+size 2118

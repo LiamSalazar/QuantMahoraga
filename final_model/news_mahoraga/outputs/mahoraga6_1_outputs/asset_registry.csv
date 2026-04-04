@@ -1,24 +1,3 @@
-ticker,asset_type,allowed_in_universe,live_from_override,notes
-AAPL,equity,True,,auto
-ADBE,equity,True,,auto
-AMAT,equity,True,,auto
-AMD,equity,True,,auto
-AMZN,equity,True,,auto
-ARM,equity,True,2023-09-14,manual_override
-ASML,equity,True,,auto
-AVGO,equity,True,,auto
-CRM,equity,True,,auto
-GOOGL,equity,True,,auto
-INTC,equity,True,,auto
-LRCX,equity,True,,auto
-META,equity,True,,auto
-MSFT,equity,True,,auto
-MU,equity,True,,auto
-NFLX,equity,True,,auto
-NOW,equity,True,,auto
-NVDA,equity,True,,auto
-PLTR,equity,True,,auto
-QCOM,equity,True,,auto
-SHOP,equity,True,,auto
-SMCI,equity,True,,auto
-TSM,equity,True,,auto
+version https://git-lfs.github.com/spec/v1
+oid sha256:2a816124f8b5baa30e8fa808d2107357c484ce18c662a977ebad6125bcff0f96
+size 631

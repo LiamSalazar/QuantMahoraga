@@ -1,24 +1,3 @@
-ticker,eligible,reason,liq_size_proxy,addv_proxy,vol_coverage,in_universe,recon_date,prior_member,entered,exited
-AAPL,True,eligible,15370531325.04252,15636600853.802757,1.0,True,2022-04-01,True,False,False
-NVDA,True,eligible,13099424924.031637,13301556468.587692,1.0,True,2022-04-01,True,False,False
-AMD,True,eligible,12648098523.71127,12168483192.51352,1.0,True,2022-04-01,True,False,False
-AMZN,True,eligible,10707805069.36442,11902950067.066011,1.0,True,2022-04-01,True,False,False
-MSFT,True,eligible,9484371754.379068,11083816814.449007,1.0,True,2022-04-01,True,False,False
-META,True,eligible,6823774989.515839,8670920593.57588,1.0,True,2022-04-01,True,False,False
-GOOGL,True,eligible,4468897429.496765,5255398002.257574,1.0,True,2022-04-01,True,False,False
-MU,True,eligible,2105153387.0502727,1967809092.7422538,1.0,True,2022-04-01,False,True,False
-SHOP,True,eligible,1986120405.8930714,2266830318.0157495,1.0,True,2022-04-01,True,False,False
-NFLX,True,eligible,1964654409.6981049,3354925597.146413,1.0,True,2022-04-01,True,False,False
-ADBE,True,eligible,1894065160.6623333,1939196314.5609052,1.0,False,2022-04-01,True,False,True
-INTC,True,eligible,1810642035.772171,1856910505.1662142,1.0,False,2022-04-01,False,False,False
-QCOM,True,eligible,1542893744.905955,1736976417.9316204,1.0,False,2022-04-01,False,False,False
-TSM,True,eligible,1474680600.8310444,1585055727.001263,1.0,False,2022-04-01,False,False,False
-CRM,True,eligible,1472038577.2877502,1592757702.5011818,1.0,False,2022-04-01,False,False,False
-AVGO,True,eligible,1317205030.7089489,1432782940.1685321,1.0,False,2022-04-01,False,False,False
-AMAT,True,eligible,941363015.1354727,1138826638.6124384,1.0,False,2022-04-01,False,False,False
-NOW,True,eligible,847111541.2012736,1023721808.2559979,1.0,False,2022-04-01,False,False,False
-ASML,True,eligible,754566349.8486328,802802627.4752178,1.0,False,2022-04-01,False,False,False
-LRCX,True,eligible,676749429.8675537,837252152.642023,1.0,False,2022-04-01,False,False,False
-PLTR,True,eligible,647250610.7797718,703813119.1459111,1.0,False,2022-04-01,False,False,False
-ARM,False,not_live_yet<2023-09-14>,0.0,0.0,,False,2022-04-01,False,False,False
-SMCI,False,addv_fail,0.0,10294312.116380721,,False,2022-04-01,False,False,False
+version https://git-lfs.github.com/spec/v1
+oid sha256:56116faf4de8b3d6a95ebcc0ce275051a55c13c960b8c61546b4efb0eb772d6c
+size 2262

@@ -1,3 +1,3 @@
-Label,FinalEquity,TotalReturn,CAGR,AnnVol,Sharpe,Sortino,MaxDD,Calmar,CVaR_5,AvgExposure,TimeInMkt,TurnoverAnn,Days
-OOS_continuous,618276.789846,5.182768,0.221448,0.188361,1.156185,1.930114,-0.207676,1.066313,-0.027491,,0.0,0.0,2295
-QQQ,531822.333709,4.318223,0.201412,0.228498,0.917784,1.455634,-0.352416,0.571519,-0.034355,1.0,1.0,0.0,2295
+version https://git-lfs.github.com/spec/v1
+oid sha256:b8f399d7b509935801ba6c9e0be7230b85f2777b6d940fe86bb371a8986c6755
+size 345

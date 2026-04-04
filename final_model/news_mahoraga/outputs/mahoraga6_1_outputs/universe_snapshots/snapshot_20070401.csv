@@ -1,24 +1,3 @@
-ticker,eligible,reason,liq_size_proxy,addv_proxy,vol_coverage,in_universe,recon_date,prior_member,entered,exited
-GOOGL,True,eligible,2484645149.8098125,2685450497.177642,1.0,True,2007-04-01,True,False,False
-AAPL,True,eligible,1977742398.5262616,2499243299.338786,1.0,True,2007-04-01,True,False,False
-MSFT,True,eligible,1229690467.357273,1293950643.5992284,1.0,True,2007-04-01,True,False,False
-INTC,True,eligible,765127370.6917667,823977357.4440775,1.0,True,2007-04-01,True,False,False
-QCOM,True,eligible,632173856.2884966,544354675.1536294,1.0,True,2007-04-01,True,False,False
-AMD,True,eligible,362284333.40931576,417688710.8282846,1.0,True,2007-04-01,True,False,False
-AMAT,True,eligible,312493448.1682523,362075774.3153451,1.0,True,2007-04-01,True,False,False
-NVDA,True,eligible,307993259.0973079,355739717.6639551,1.0,True,2007-04-01,True,False,False
-ADBE,True,eligible,266030298.88167062,231453777.257665,1.0,True,2007-04-01,True,False,False
-AMZN,True,eligible,248645251.5494585,268332401.88607338,1.0,True,2007-04-01,True,False,False
-MU,True,eligible,183467119.52889442,173941927.60793898,1.0,False,2007-04-01,False,False,False
-LRCX,True,eligible,128503920.71155708,155402146.661134,1.0,False,2007-04-01,False,False,False
-CRM,True,eligible,71914061.48595174,73157524.67152429,1.0,False,2007-04-01,False,False,False
-TSM,True,eligible,69616571.33871579,74224741.69078764,1.0,False,2007-04-01,False,False,False
-ASML,True,eligible,52771170.96141637,57842317.15055027,1.0,False,2007-04-01,False,False,False
-ARM,False,not_live_yet<2023-09-14>,0.0,0.0,,False,2007-04-01,False,False,False
-AVGO,False,seasoning_fail,0.0,0.0,,False,2007-04-01,False,False,False
-META,False,seasoning_fail,0.0,0.0,,False,2007-04-01,False,False,False
-NFLX,False,addv_fail,0.0,45303365.509983554,,False,2007-04-01,False,False,False
-PLTR,False,seasoning_fail,0.0,0.0,,False,2007-04-01,False,False,False
-NOW,False,seasoning_fail,0.0,0.0,,False,2007-04-01,False,False,False
-SHOP,False,seasoning_fail,0.0,0.0,,False,2007-04-01,False,False,False
-SMCI,False,seasoning_fail,0.0,0.0,,False,2007-04-01,False,False,False
+version https://git-lfs.github.com/spec/v1
+oid sha256:915681cac8099262407dbc4f7c3899b21a7a4465894bab88b37ab43ecea4c5b8
+size 2108

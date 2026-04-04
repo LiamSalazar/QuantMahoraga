@@ -4,6 +4,13 @@ mahoraga_env/
 env/
 .env
 
+
 mahoraga_env/
 __pycache__/
 *.py[cod]
+
+news_raw_gdelt_en.csv
+news_raw_gdelt_en.parquet
+news_raw_gdelt.parquet
+news_raw_gdelt.jsonl
+ingest_manifest.json

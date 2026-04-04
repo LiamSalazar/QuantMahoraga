@@ -1,5 +1,3 @@
-Universe,N_tickers,CAGR%,Sharpe,MaxDD%,Calmar,FinalEq
-FULL_MEGA,12,20.9,1.052,-27.45,0.762,5483078.0
-SEMIS,10,13.37,0.707,-44.41,0.301,1410769.0
-PLATFORMS,10,12.76,0.752,-29.66,0.43,1260589.0
-AI_CORE,10,19.87,0.971,-38.33,0.519,4578557.0
+version https://git-lfs.github.com/spec/v1
+oid sha256:cdcaf14a7b2f49079dd0622ec18a7e4b9030dd618e11505acea20a08b865e342
+size 243
