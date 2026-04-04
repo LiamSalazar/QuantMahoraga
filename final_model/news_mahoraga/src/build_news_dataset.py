@@ -90,6 +90,24 @@ OPPORTUNITY_KEYWORDS = [
     "demand acceleration", "orders jump", "revenue outlook raised"
 ]
 
+SEMANTIC_TOPICS = {"macro", "tech", "panic", "opportunity", "ticker", "general"}
+
+RAW_TOPIC_MAP = {
+    "macro_risk": "macro",
+    "macro": "macro",
+    "macro risk": "macro",
+    "tech_ai": "tech",
+    "tech": "tech",
+    "ai": "tech",
+    "technology": "tech",
+    "universe": "ticker",
+    "ticker": "ticker",
+    "tickers": "ticker",
+    "company": "ticker",
+    "companies": "ticker",
+    "general": "general",
+}
+
 
 # ============================================================================
 # DATA CLASSES
@@ -208,6 +226,35 @@ def detect_topic(text: str) -> str:
     return best_topic if scores[best_topic] > 0 else "general"
 
 
+def normalize_topic_label(topic: object) -> str:
+    raw = normalize_text(topic).lower()
+    if not raw:
+        return ""
+    if raw in RAW_TOPIC_MAP:
+        return RAW_TOPIC_MAP[raw]
+    compact = raw.replace("-", "_").replace(" ", "_")
+    if compact in RAW_TOPIC_MAP:
+        return RAW_TOPIC_MAP[compact]
+    return raw if raw in SEMANTIC_TOPICS else "general"
+
+
+def choose_semantic_topic(raw_topic_norm: str, inferred_topic: str, tickers: list[str]) -> tuple[str, str]:
+    inferred_topic = inferred_topic if inferred_topic in SEMANTIC_TOPICS else "general"
+    raw_topic_norm = raw_topic_norm if raw_topic_norm in SEMANTIC_TOPICS else ""
+
+    if inferred_topic in {"panic", "opportunity"}:
+        return inferred_topic, "inferred_priority"
+    if raw_topic_norm in {"macro", "tech"}:
+        return raw_topic_norm, "raw_mapped"
+    if inferred_topic in {"macro", "tech"}:
+        return inferred_topic, "inferred"
+    if raw_topic_norm == "ticker":
+        return "ticker", "raw_mapped"
+    if tickers:
+        return "ticker", "ticker_tags"
+    return "general", "fallback"
+
+
 def infer_tickers(text: str, universe: list[str]) -> list[str]:
     found = []
     upper = f" {text.upper()} "
@@ -221,9 +268,9 @@ def compute_relevance_kind(topic: str, tickers: list[str], text: str) -> str:
     lower = text.lower()
     if topic in {"panic", "macro"}:
         return "macro"
-    if tickers:
+    if topic == "ticker" or tickers:
         return "ticker"
-    if any(k in lower for k in TECH_KEYWORDS):
+    if topic == "tech" or any(k in lower for k in TECH_KEYWORDS):
         return "tech"
     return "low"
 
@@ -238,6 +285,8 @@ def compute_event_strength(topic: str, relevance_kind: str, clarity_proxy: float
         base += 0.65
     elif topic == "tech":
         base += 0.55
+    elif topic == "ticker":
+        base += 0.45
     else:
         base += 0.30
 
@@ -392,17 +441,30 @@ def clean_news(df: pd.DataFrame, universe: list[str]) -> pd.DataFrame:
         inferred_tickers.append(combined)
     out["ticker_tags"] = inferred_tickers
 
-    # topic inferido
-    inferred_topics = []
+    # topic semántico: conserva trazabilidad del topic crudo, pero evita
+    # que etiquetas operativas como macro_risk / tech_ai / universe contaminen
+    # el rollup semanal esperado por Mahoraga.
+    raw_topic_norm = []
+    topic_inferred = []
+    semantic_topics = []
+    semantic_sources = []
     for _, row in out.iterrows():
         text = " ".join([row.get("headline", ""), row.get("snippet", ""), row.get("body", "")])
-        base_topic = normalize_text(row.get("topic", "")).lower()
+        base_topic = normalize_topic_label(row.get("topic", ""))
         inferred_topic = detect_topic(text)
-        if base_topic:
-            inferred_topics.append(base_topic)
-        else:
-            inferred_topics.append(inferred_topic)
-    out["topic"] = inferred_topics
+        final_topic, topic_source = choose_semantic_topic(
+            raw_topic_norm=base_topic,
+            inferred_topic=inferred_topic,
+            tickers=row.get("ticker_tags", []),
+        )
+        raw_topic_norm.append(base_topic)
+        topic_inferred.append(inferred_topic)
+        semantic_topics.append(final_topic)
+        semantic_sources.append(topic_source)
+    out["topic_raw_norm"] = raw_topic_norm
+    out["topic_inferred"] = topic_inferred
+    out["topic"] = semantic_topics
+    out["topic_semantic_source"] = semantic_sources
 
     # relevance
     relevance_kind = []
@@ -460,7 +522,8 @@ def clean_news(df: pd.DataFrame, universe: list[str]) -> pd.DataFrame:
     # columnas finales ordenadas
     cols = [
         "news_id", "timestamp_utc", "week_end", "source", "source_weight",
-        "headline", "snippet", "body", "language", "ticker_tags", "topic",
+        "headline", "snippet", "body", "language", "ticker_tags",
+        "topic_raw_norm", "topic_inferred", "topic", "topic_semantic_source",
         "relevance_kind", "clarity_proxy", "event_strength", "url",
         "_source_file", "headline_norm", "snippet_norm", "event_key"
     ]
@@ -473,8 +536,9 @@ def build_weekly_rollup(clean_df: pd.DataFrame, universe: list[str], max_article
         return pd.DataFrame(columns=[
             "week_end", "n_articles", "n_sources", "n_macro", "n_tech", "n_ticker",
             "n_low", "avg_source_weight", "avg_event_strength", "avg_clarity_proxy",
-            "top_topics", "top_sources", "top_tickers", "headline_concat",
-            "snippet_concat", "text_block"
+            "panic_like_count", "opportunity_like_count", "macro_topic_count",
+            "tech_topic_count", "ticker_topic_count", "top_topics", "top_sources",
+            "top_tickers", "headline_concat", "snippet_concat", "text_block"
         ])
 
     rows = []
@@ -510,6 +574,7 @@ def build_weekly_rollup(clean_df: pd.DataFrame, universe: list[str], max_article
             "opportunity_like_count": int((g["topic"] == "opportunity").sum()),
             "macro_topic_count": int((g["topic"] == "macro").sum()),
             "tech_topic_count": int((g["topic"] == "tech").sum()),
+            "ticker_topic_count": int((g["topic"] == "ticker").sum()),
             "top_topics": json.dumps(topics, ensure_ascii=False),
             "top_sources": json.dumps(sources, ensure_ascii=False),
             "top_tickers": json.dumps(top_tickers, ensure_ascii=False),
@@ -593,7 +658,7 @@ def main() -> None:
     print(f"[load] filas crudas cargadas: {rows_loaded_raw:,}")
 
     clean_df = clean_news(raw_df, universe=universe)
-    rows_after_timestamp_filter = int(raw_df["timestamp_utc"].notna().sum()) if "timestamp_utc" in raw_df.columns else 0
+    rows_after_timestamp_filter = int(pd.to_datetime(raw_df.get("timestamp_utc"), errors="coerce", utc=True).notna().sum()) if "timestamp_utc" in raw_df.columns else 0
     rows_after_dedup = len(clean_df)  # aproximación útil para manifest simple
 
     clean_path = processed_dir / "news_clean.parquet"
