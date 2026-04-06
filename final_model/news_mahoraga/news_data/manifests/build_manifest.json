@@ -1,0 +1,26 @@
+{
+  "raw_files_found": 2,
+  "rows_loaded_raw": 58428,
+  "rows_after_timestamp_filter": 58428,
+  "rows_after_dedup": 28690,
+  "rows_final_clean": 28690,
+  "weeks_final": 14,
+  "min_timestamp_utc": "2025-01-01 20:30:00+00:00",
+  "max_timestamp_utc": "2025-04-01 00:15:00+00:00",
+  "output_clean_path": "D:\\QuantMahoraga\\final_model\\news_mahoraga\\news_data\\processed\\news_clean.parquet",
+  "output_weekly_path": "D:\\QuantMahoraga\\final_model\\news_mahoraga\\news_data\\weekly\\weekly_news_rollup.parquet",
+  "universe_tickers": [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "AVGO",
+    "ASML",
+    "TSM",
+    "ADBE",
+    "NFLX",
+    "AMD"
+  ]
+}

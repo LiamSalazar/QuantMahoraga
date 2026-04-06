@@ -1,0 +1,17 @@
+{
+  "weekly_rows_in": 14,
+  "weekly_rows_out": 14,
+  "min_week_end": "2025-01-03 00:00:00",
+  "max_week_end": "2025-04-04 00:00:00",
+  "horizon_weeks": 2,
+  "dd_penalty": 0.4,
+  "fragility_quantile": 0.2,
+  "recovery_return_quantile": 0.7,
+  "min_history_weeks": 8,
+  "quant_ref_used": false,
+  "panic_positive_rate": 0.3333333333333333,
+  "opportunity_positive_rate": 0.0,
+  "clarity_positive_rate": 1.0,
+  "breadth_positive_rate": 1.0,
+  "output_labels_path": "D:\\QuantMahoraga\\final_model\\news_mahoraga\\news_data\\labels\\weekly_targets.parquet"
+}
