@@ -1087,7 +1087,7 @@ def _calibrate_stage1_hawkes(
     return best, pd.DataFrame(rows).sort_values("score", ascending=False)
 
 
-def _calibrate_7c(
+def _calibrate_7d(
     feat_full: pd.DataFrame,
     ohlcv: Dict[str, pd.DataFrame],
     cfg_fold: Mahoraga7DConfig,
