@@ -127,7 +127,7 @@ def run_adaptive_core_backtest(ohlcv: Dict[str, pd.DataFrame], cfg: Mahoraga8Con
     low = ohlcv['low'][close.columns].copy()
     rets = close.pct_change().fillna(0.0)
     qqq = m6.to_s(ohlcv['close'][cfg.bench_qqq].ffill(), 'QQQ')
-    rebal_dates = m6.get_rebalance_dates(close.index, cfg.rebalance_freq)
+    rebal_dates = pd.DatetimeIndex(close.resample(cfg.rebalance_freq).last().dropna().index)
     rebal_set = set(pd.DatetimeIndex(rebal_dates))
     ctx_crisis = m6.build_crisis_state(close, qqq, cfg)
     crisis_scale = m6.crisis_scale_series(ctx_crisis['state'], cfg)

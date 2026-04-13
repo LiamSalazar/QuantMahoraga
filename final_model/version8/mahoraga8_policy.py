@@ -25,10 +25,34 @@ def _state_params(cfg: Mahoraga8Config, state_map: str) -> Dict[str, Dict[str, f
 def _apply_transition_smoothing(policy: pd.DataFrame, cfg: Mahoraga8Config) -> pd.DataFrame:
     if cfg.cp_transition_smoothing <= 1:
         return policy
+
     out = policy.copy()
-    cols = [c for c in out.columns if c.startswith('active_') or c == 'risk_budget_cap']
-    for c in cols:
-        out[c] = out[c].rolling(cfg.cp_transition_smoothing, min_periods=1).mean()
+
+    smooth_cols = [
+        "active_top_k",
+        "active_weight_cap",
+        "active_vol_target",
+        "active_max_exposure",
+        "active_k_atr",
+        "active_rel_tilt",
+        "risk_budget_cap",
+        "active_regime_confidence",
+    ]
+    smooth_cols = [c for c in smooth_cols if c in out.columns]
+
+    for c in smooth_cols:
+        out[c] = pd.to_numeric(out[c], errors="coerce").rolling(
+            cfg.cp_transition_smoothing,
+            min_periods=1
+        ).mean()
+
+    if "active_top_k" in out.columns:
+        out["active_top_k"] = out["active_top_k"].round().clip(lower=1).astype(int)
+
+    for c in ["active_regime_state", "active_defense_mode", "active_reentry_mode"]:
+        if c in out.columns:
+            out[c] = out[c].ffill().bfill()
+
     return out
 
 

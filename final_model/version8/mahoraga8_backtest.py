@@ -44,7 +44,7 @@ def _run_single_fold_h8(fold_n: int, baseline_row: pd.Series, ohlcv: Dict[str, p
     cfg_fold = _get_fold_cfg(ohlcv, cfg_base, costs, universe_schedule, baseline_row)
     print(f"  [IC] trend={cfg_fold.w_trend:.3f} mom={cfg_fold.w_mom:.3f} rel={cfg_fold.w_rel:.3f}")
     print(f"  [fold {fold_n}] Calibrating {cfg_fold.variant} on train via inner validation …")
-    feat_full = h7._build_context_table(ohlcv, cfg_fold, costs, universe_schedule)
+    feat_full = h7._build_context_table(ohlcv, cfg_fold, universe_schedule)
     best_params, calib_df = calibrate_mahoraga8(feat_full, ohlcv, cfg_fold, costs, universe_schedule, train_start, train_end)
     hawkes_df, _ = h7._build_hawkes_signals(feat_full, best_params['stress_q'], best_params['recovery_q'], best_params['decay'], best_params['stress_scale'], best_params['recovery_scale'], feat_full.loc[train_start:train_end])
     base_bt = m6.backtest(ohlcv, cfg_fold, costs, label=f'BASE_{fold_n}', universe_schedule=universe_schedule)
