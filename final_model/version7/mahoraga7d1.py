@@ -816,6 +816,7 @@ def _policy_from_dual_probs_vec(
     out["cp_direction"] = cp_dir
     out["risk_budget"] = risk_budget
     out["conf_upper_loss"] = conf_upper
+    out["rel_tilt"] = np.where(action == "REL_TILT", float(rel_tilt), np.nan)
     return out
 
 
@@ -944,37 +945,6 @@ def _score_overlay(
     )
 
 
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PERF helper reused from 7C.3/7C.4
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _compute_weights_and_vol(
-    ctx: Dict[str, Any],
-    cfg: Mahoraga7DConfig,
-    universe_schedule: Optional[pd.DataFrame],
-    score_rel: pd.DataFrame,
-    action_daily: pd.Series,
-) -> Tuple[pd.DataFrame, pd.Series]:
-    """
-    Compute the weight trajectory and volatility scale for one unique
-    (prob_trigger, stress_trigger_q, recovery_trigger_q, rel_tilt) policy path.
-    defensive_scale and recovery_floor do not affect action_daily, so this
-    result can be safely cached and reused across Phase B.
-    """
-    close = ctx["close"]
-    high = ctx["high"]
-    low = ctx["low"]
-    rets = ctx["rets"]
-
-    w = h7._build_weights_sparse(ctx, cfg, universe_schedule, score_rel, action_daily)
-    w_stop, _ = m6.apply_chandelier(w, close, high, low, cfg)
-    w_exec_1x = w_stop.shift(1).fillna(0.0)
-    gross_1x = (w_exec_1x * rets).sum(axis=1)
-    vol_sc = m6.vol_target_scale(gross_1x, cfg)
-    return w_exec_1x, vol_sc
-
 def _score_from_weights(
     w_exec_1x: pd.DataFrame,
     vol_sc: pd.Series,
@@ -1059,6 +1029,7 @@ def _expand_weekly_policy_to_daily(policy_weekly: pd.DataFrame, daily_idx: pd.Da
         "recovery_override_scale": 0.0,
         "panic_mode": 0.0,
         "risk_budget": 1.0,
+        "rel_tilt": np.nan,
     }
     out = pd.DataFrame(index=daily_idx)
     if policy_weekly.empty:
@@ -1299,19 +1270,6 @@ def _calibrate_7c(
     fallback = {**s1_best, "fragility_quantile": cfg_fold.fragility_quantile_grid[0], "horizon_weeks": cfg_fold.fragility_horizon_weeks_grid[0], "prob_trigger": cfg_fold.fragility_prob_trigger_grid[0], "recovery_prob_trigger": cfg_fold.recovery_prob_trigger, "defensive_scale": cfg_fold.defensive_scale_grid[0], "recovery_floor": cfg_fold.recovery_floor_grid[0], "rel_tilt": cfg_fold.rel_tilt_grid[0], "stress_trigger_q": cfg_fold.stress_trigger_q_grid[0], "recovery_trigger_q": cfg_fold.recovery_trigger_q_grid[0], "score": s1_best["score"]}
     return (best_params if best_params is not None else fallback), calib_df.sort_values("score", ascending=False)
 
-
-
-# Backward-compatible alias: some call sites were renamed to _calibrate_7d
-def _calibrate_7d(
-    feat_full: pd.DataFrame,
-    ohlcv: Dict[str, pd.DataFrame],
-    cfg_fold: Mahoraga7DConfig,
-    costs: m6.CostsConfig,
-    universe_schedule: Optional[pd.DataFrame],
-    train_start: str,
-    train_end: str,
-) -> Tuple[Dict[str, Any], pd.DataFrame]:
-    return _calibrate_7c(feat_full, ohlcv, cfg_fold, costs, universe_schedule, train_start, train_end)
 
 def _run_single_fold(
     fold: Dict[str, Any],
