@@ -56,7 +56,8 @@ def _build_regime_score(weekly_df: pd.DataFrame, train_idx: pd.DatetimeIndex) ->
     vix_z = _safe_z_on_train(weekly_df['vix_level'], train_idx)
     dd_z = _safe_z_on_train(-weekly_df['qqq_drawdown'], train_idx)
     breadth_stress = _safe_z_on_train(-weekly_df['breadth_63d'], train_idx)
-    return (0.30 * stress_z + 0.22 * corr_z + 0.18 * vix_z + 0.18 * dd_z + 0.08 * breadth_stress - 0.18 * rec_z).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    score = (0.32 * stress_z + 0.24 * corr_z + 0.18 * vix_z + 0.16 * dd_z + 0.08 * breadth_stress - 0.14 * rec_z)
+    return score.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
 
 def _bocpd_lite_regime_features(weekly_df: pd.DataFrame, train_idx: pd.DatetimeIndex, cfg: Mahoraga8Config) -> pd.DataFrame:
@@ -182,28 +183,98 @@ def _ridge_split_conformal_risk(weekly_df: pd.DataFrame, returns_daily: pd.Serie
     return pd.DataFrame({'conf_pred_loss': pred, 'conf_upper_loss': upper, 'risk_budget': risk_budget}, index=weekly_df.index)
 
 
+def _enforce_min_persistence(raw_state: pd.Series, min_counts: Dict[str, int]) -> pd.Series:
+    vals = raw_state.astype(str).tolist()
+    if not vals:
+        return raw_state
+    out = vals[:]
+    run_start = 0
+    while run_start < len(vals):
+        run_end = run_start
+        while run_end + 1 < len(vals) and vals[run_end + 1] == vals[run_start]:
+            run_end += 1
+        state = vals[run_start]
+        run_len = run_end - run_start + 1
+        need = int(min_counts.get(state, 1))
+        if run_len < need and run_start > 0:
+            prev_state = out[run_start - 1]
+            for i in range(run_start, run_end + 1):
+                out[i] = prev_state
+        run_start = run_end + 1
+    return pd.Series(out, index=raw_state.index)
+
+
 def _classify_regime_state(regime_df: pd.DataFrame, train_idx: pd.DatetimeIndex, cfg: Mahoraga8Config) -> pd.DataFrame:
     train = regime_df.loc[train_idx].copy()
     cp_prob_thr = float(np.nanquantile(train['cp_prob'], cfg.cp_prob_quantile)) if len(train) else 1.0
     cp_sev_thr = float(np.nanquantile(train['cp_severity'], cfg.cp_severity_quantile)) if len(train) else np.inf
-    stress_q = float(np.nanquantile(train['regime_score'], 0.75)) if len(train) else 0.5
-    panic_q = float(np.nanquantile(train['regime_score'], 0.90)) if len(train) else 1.0
-    rec_q = float(np.nanquantile(train['regime_score'], 0.40)) if len(train) else 0.0
+    stress_in = float(np.nanquantile(train['regime_score'], cfg.stress_entry_quantile)) if len(train) else 0.5
+    stress_out = float(np.nanquantile(train['regime_score'], cfg.stress_exit_quantile)) if len(train) else 0.2
+    panic_in = float(np.nanquantile(train['regime_score'], cfg.panic_entry_quantile)) if len(train) else 1.0
+    panic_out = float(np.nanquantile(train['regime_score'], cfg.panic_exit_quantile)) if len(train) else 0.7
+    rec_q = float(np.nanquantile(train['regime_score'], cfg.recovery_entry_quantile)) if len(train) else 0.0
+
     rs = regime_df['regime_score'].fillna(0.0)
     cp = regime_df['cp_prob'].fillna(0.0)
     sev = regime_df['cp_severity'].fillna(0.0)
     direction = regime_df['cp_direction'].fillna(0.0)
     rb = regime_df['risk_budget'].fillna(1.0)
-    state = np.full(len(regime_df), 'NORMAL', dtype=object)
-    panic = (rs >= panic_q) | ((cp >= cp_prob_thr) & (sev >= cp_sev_thr) & (direction < 0) & (rb <= 0.50))
-    stress = ((rs >= stress_q) | ((direction < 0) & (cp >= cp_prob_thr))) & ~panic
-    recovery = ((direction > 0) & (cp >= cp_prob_thr)) | ((rs <= rec_q) & (regime_df['recovery_intensity'] > regime_df['stress_intensity']))
-    state[stress.to_numpy()] = 'STRESS'
-    state[panic.to_numpy()] = 'PANIC'
-    state[recovery.to_numpy()] = 'RECOVERY'
-    conf = np.where(state == 'PANIC', np.maximum(cp.to_numpy(), sev.to_numpy() / max(cp_sev_thr, 1e-6)), np.where(state == 'STRESS', np.maximum(cp.to_numpy(), np.clip(rs.to_numpy() / max(stress_q, 1e-6), 0.0, 1.5)), np.where(state == 'RECOVERY', np.maximum(cp.to_numpy(), np.clip(1.0 - rb.to_numpy(), 0.0, 1.0)), 1.0 - np.clip(cp.to_numpy(), 0.0, 1.0))))
+
+    raw = []
+    prev = 'NORMAL'
+    for i in range(len(regime_df)):
+        cur = prev
+        rsi = float(rs.iloc[i]); cpi = float(cp.iloc[i]); sevi = float(sev.iloc[i]); di = float(direction.iloc[i]); rbi = float(rb.iloc[i])
+        if prev == 'PANIC':
+            if (rsi >= panic_out) or ((cpi >= cp_prob_thr) and (di < 0)):
+                cur = 'PANIC'
+            elif (rsi >= stress_out):
+                cur = 'STRESS'
+            else:
+                cur = 'NORMAL'
+        elif prev == 'STRESS':
+            if (rsi >= panic_in) or ((cpi >= cp_prob_thr) and (sevi >= cp_sev_thr) and (di < 0) and (rbi <= 0.45)):
+                cur = 'PANIC'
+            elif (rsi >= stress_out) or ((di < 0) and (cpi >= cp_prob_thr)):
+                cur = 'STRESS'
+            elif (di > 0) and (rsi <= rec_q) and (rbi >= 0.55):
+                cur = 'RECOVERY'
+            else:
+                cur = 'NORMAL'
+        elif prev == 'RECOVERY':
+            if (rsi >= panic_in) and (di < 0):
+                cur = 'PANIC'
+            elif (rsi >= stress_in) and (di <= 0):
+                cur = 'STRESS'
+            elif (di > 0) or (rsi <= stress_out):
+                cur = 'RECOVERY'
+            else:
+                cur = 'NORMAL'
+        else:
+            if (rsi >= panic_in) and ((cpi >= cp_prob_thr) or (rbi <= 0.40)):
+                cur = 'PANIC'
+            elif (rsi >= stress_in) or ((di < 0) and (cpi >= cp_prob_thr)):
+                cur = 'STRESS'
+            elif (di > 0) and (rsi <= rec_q) and (rbi >= 0.60):
+                cur = 'RECOVERY'
+            else:
+                cur = 'NORMAL'
+        raw.append(cur)
+        prev = cur
+
+    raw_s = pd.Series(raw, index=regime_df.index)
+    raw_s = _enforce_min_persistence(raw_s, {
+        'STRESS': cfg.stress_min_persistence,
+        'PANIC': cfg.panic_min_persistence,
+        'RECOVERY': cfg.recovery_min_persistence,
+        'NORMAL': 1,
+    })
+
+    conf = np.where(raw_s.values == 'PANIC', np.maximum(cp.to_numpy(), sev.to_numpy() / max(cp_sev_thr, 1e-6)),
+                    np.where(raw_s.values == 'STRESS', np.maximum(cp.to_numpy(), np.clip(rs.to_numpy() / max(stress_in, 1e-6), 0.0, 1.5)),
+                             np.where(raw_s.values == 'RECOVERY', np.maximum(cp.to_numpy(), np.clip(1.0 - rb.to_numpy(), 0.0, 1.0)), 1.0 - np.clip(cp.to_numpy(), 0.0, 1.0))))
     out = regime_df.copy()
-    out['regime_state'] = pd.Series(state, index=regime_df.index).ffill()
+    out['regime_state'] = raw_s.ffill().bfill()
     out['regime_confidence'] = pd.Series(conf, index=regime_df.index).clip(0.0, 2.0).fillna(0.0)
     return out
 

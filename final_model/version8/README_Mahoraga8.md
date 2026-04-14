@@ -1,29 +1,28 @@
-# Mahoraga 8
+# Mahoraga 8.1 Lite
 
-Mahoraga 8 is an integrated regime-aware core.
+Mahoraga 8.1 Lite keeps **selection frozen like 6.1** and only adapts:
+- max exposure
+- vol target
+- risk budget
+- regime persistence / hysteresis
 
-Unlike the 7.x family, it does **not** treat Mahoraga 6.1 as an untouchable
-frozen execution core with an overlay layered on top.
+This is the disciplined follow-up to H8 after the first integrated-core version
+proved too intrusive.
+
+## Files you should replace in version8/
+- mahoraga8_config.py
+- mahoraga8_regime.py
+- mahoraga8_policy.py
+- mahoraga8_core.py
+- mahoraga8_calibration.py
+- mahoraga8_backtest.py
+- mahoraga8_runner.py
+- mahoraga8_reporting.py
 
 ## Required local files
-This folder must already contain:
-- `mahoraga6_1.py`
-- `mahoraga7_1.py`
-
-## New files
-- `mahoraga8_config.py`
-- `mahoraga8_regime.py`
-- `mahoraga8_policy.py`
-- `mahoraga8_core.py`
-- `mahoraga8_calibration.py`
-- `mahoraga8_backtest.py`
-- `mahoraga8_reporting.py`
-- `mahoraga8_runner.py`
-
-## Modes
-- `SMOKE`: quickest sanity check
-- `FAST`: useful research pass
-- `FULL`: all folds and full search
+This folder must also contain your local compatible copies of:
+- mahoraga6_1.py
+- mahoraga7_1.py
 
 ## Run
 ```bash

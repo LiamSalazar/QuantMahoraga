@@ -55,8 +55,8 @@ def _oos_comparison_text(cfg: Mahoraga8Config, wf: Dict[str, Any]) -> str:
     base_eq = cfg.capital_initial * (1.0 + base_r).cumprod()
     h8_eq = cfg.capital_initial * (1.0 + h8_r).cumprod()
     sb = m6.summarize(base_r, base_eq, pd.Series(1.0, index=base_r.index), pd.Series(0.0, index=base_r.index), cfg, 'BASE_OOS')
-    so = m6.summarize(h8_r, h8_eq, pd.Series(1.0, index=h8_r.index), pd.Series(0.0, index=h8_r.index), cfg, 'H8_OOS')
-    return f"OOS COMPARISON\n  BASELINE CAGR={sb['CAGR']*100:.2f}%  Sharpe={sb['Sharpe']:.3f}  MaxDD={sb['MaxDD']*100:.2f}%  CVaR5={sb['CVaR_5']*100:.2f}%\n  H8       CAGR={so['CAGR']*100:.2f}%  Sharpe={so['Sharpe']:.3f}  MaxDD={so['MaxDD']*100:.2f}%  CVaR5={so['CVaR_5']*100:.2f}%\n"
+    so = m6.summarize(h8_r, h8_eq, pd.Series(1.0, index=h8_r.index), pd.Series(0.0, index=h8_r.index), cfg, 'H8L_OOS')
+    return f"OOS COMPARISON\n  BASELINE CAGR={sb['CAGR']*100:.2f}%  Sharpe={sb['Sharpe']:.3f}  MaxDD={sb['MaxDD']*100:.2f}%  CVaR5={sb['CVaR_5']*100:.2f}%\n  H8.1L    CAGR={so['CAGR']*100:.2f}%  Sharpe={so['Sharpe']:.3f}  MaxDD={so['MaxDD']*100:.2f}%  CVaR5={so['CVaR_5']*100:.2f}%\n"
 
 
 def final_report_text_h8(cfg: Mahoraga8Config, wf: Dict[str, Any]) -> str:
@@ -64,7 +64,7 @@ def final_report_text_h8(cfg: Mahoraga8Config, wf: Dict[str, Any]) -> str:
     regime_df = build_regime_comparison(wf, cfg)
     sel_df = selection_audit_h8(wf)
     text = []
-    text.append('MAHORAGA 8 — FINAL REPORT')
+    text.append('MAHORAGA 8.1 LITE — FINAL REPORT')
     text.append('=' * 78)
     text.append('')
     text.append(_oos_comparison_text(cfg, wf))

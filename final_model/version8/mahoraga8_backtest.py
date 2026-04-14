@@ -50,8 +50,8 @@ def _run_single_fold_h8(fold_n: int, baseline_row: pd.Series, ohlcv: Dict[str, p
     base_bt = m6.backtest(ohlcv, cfg_fold, costs, label=f'BASE_{fold_n}', universe_schedule=universe_schedule)
     train_idx = hawkes_df.index[(hawkes_df.index >= pd.Timestamp(train_start)) & (hawkes_df.index <= pd.Timestamp(train_end))]
     regime_table = build_regime_table(hawkes_df, base_bt, base_bt['bench']['QQQ_r'], train_idx, cfg_fold)
-    policy_table = build_policy_table(regime_table, cfg_fold, state_map=str(best_params['state_map']), risk_budget_blend=float(best_params['risk_budget_blend']), exposure_cap_mult=float(best_params['exposure_cap_mult']), top_k_shift=int(best_params['top_k_shift']), vol_target_shift=float(best_params['vol_target_shift']))
-    ov_bt = run_adaptive_core_backtest(ohlcv, cfg_fold, costs, universe_schedule, regime_table, policy_table, label=f'H8_{fold_n}')
+    policy_table = build_policy_table(regime_table, cfg_fold, state_map=str(best_params['state_map']), risk_budget_blend=float(best_params['risk_budget_blend']), exposure_cap_mult=float(best_params['exposure_cap_mult']), top_k_shift=0, vol_target_shift=float(best_params['vol_target_shift']))
+    ov_bt = run_adaptive_core_backtest(ohlcv, cfg_fold, costs, universe_schedule, regime_table, policy_table, label=f'H8L_{fold_n}')
     rb = base_bt['returns_net'].loc[test_start:test_end]
     qb = base_bt['equity'].loc[test_start:test_end]
     eb = base_bt['exposure'].loc[test_start:test_end]
@@ -61,15 +61,41 @@ def _run_single_fold_h8(fold_n: int, baseline_row: pd.Series, ohlcv: Dict[str, p
     qo = ov_bt['equity'].loc[test_start:test_end]
     eo = ov_bt['exposure'].loc[test_start:test_end]
     to = ov_bt['turnover'].loc[test_start:test_end]
-    so = m6.summarize(ro, qo, eo, to, cfg_fold, f'H8_{fold_n}')
+    so = m6.summarize(ro, qo, eo, to, cfg_fold, f'H8L_{fold_n}')
     regime_test = policy_table['active_regime_state'].reindex(ro.index).ffill().fillna('NORMAL')
     qqq_future = base_bt['bench']['QQQ_r'].resample(cfg_fold.decision_freq).sum(min_count=1).reindex(policy_table.index).fillna(0.0)
     pos = qqq_future > 0
     captured = ((policy_table['active_regime_state'].isin(['RECOVERY', 'NORMAL'])) & pos).sum()
     missed = pos.sum() - captured
     recovery_capture_rate = float(captured / max(int(pos.sum()), 1)) if pos.sum() > 0 else 0.0
-    print(f"  [fold {fold_n}] BASE Sharpe={sb['Sharpe']:.3f} | 8 Sharpe={so['Sharpe']:.3f} | Δ={so['Sharpe'] - sb['Sharpe']:+.3f}")
-    return {'fold': fold_n, 'base_bt': base_bt, 'ov_bt': ov_bt, 'policy_table': policy_table, 'regime_table': regime_table, 'calib_df': calib_df, 'best_params': best_params, 'fold_row': {'fold': fold_n, 'train': f'{train_start}→{train_end}', 'test': f'{test_start}→{test_end}', 'BASE_CAGR%': round(sb['CAGR'] * 100, 2), 'BASE_Sharpe': round(sb['Sharpe'], 4), 'BASE_MaxDD%': round(sb['MaxDD'] * 100, 2), 'H8_CAGR%': round(so['CAGR'] * 100, 2), 'H8_Sharpe': round(so['Sharpe'], 4), 'H8_MaxDD%': round(so['MaxDD'] * 100, 2), 'H8_CVaR5%': round(so['CVaR_5'] * 100, 2), 'DeltaSharpe': round(so['Sharpe'] - sb['Sharpe'], 4), 'MeanRiskBudget': round(float(policy_table['risk_budget_cap'].mean()), 4), 'InterventionRate': round(float((policy_table['active_regime_state'] != 'NORMAL').mean()), 4), 'MissedReboundQQQ': round(float(missed), 2), 'RecoveryCaptureRate': round(recovery_capture_rate, 4), 'PanicRate': round(float((regime_test == 'PANIC').mean()), 4)}}
+    print(f"  [fold {fold_n}] BASE Sharpe={sb['Sharpe']:.3f} | 8.1L Sharpe={so['Sharpe']:.3f} | Δ={so['Sharpe'] - sb['Sharpe']:+.3f}")
+    return {
+        'fold': fold_n,
+        'base_bt': base_bt,
+        'ov_bt': ov_bt,
+        'policy_table': policy_table,
+        'regime_table': regime_table,
+        'calib_df': calib_df,
+        'best_params': best_params,
+        'fold_row': {
+            'fold': fold_n,
+            'train': f'{train_start}→{train_end}',
+            'test': f'{test_start}→{test_end}',
+            'BASE_CAGR%': round(sb['CAGR'] * 100, 2),
+            'BASE_Sharpe': round(sb['Sharpe'], 4),
+            'BASE_MaxDD%': round(sb['MaxDD'] * 100, 2),
+            'H8_CAGR%': round(so['CAGR'] * 100, 2),
+            'H8_Sharpe': round(so['Sharpe'], 4),
+            'H8_MaxDD%': round(so['MaxDD'] * 100, 2),
+            'H8_CVaR5%': round(so['CVaR_5'] * 100, 2),
+            'DeltaSharpe': round(so['Sharpe'] - sb['Sharpe'], 4),
+            'MeanRiskBudget': round(float(policy_table['risk_budget_cap'].mean()), 4),
+            'InterventionRate': round(float((policy_table['active_regime_state'] != 'NORMAL').mean()), 4),
+            'MissedReboundQQQ': round(float(missed), 2),
+            'RecoveryCaptureRate': round(recovery_capture_rate, 4),
+            'PanicRate': round(float((regime_test == 'PANIC').mean()), 4),
+        },
+    }
 
 
 def stitch_oos_path(results: list[Dict[str, Any]], key: str) -> pd.Series:

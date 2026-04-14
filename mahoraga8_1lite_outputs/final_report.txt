@@ -1,0 +1,23 @@
+MAHORAGA 8.1 LITE — FINAL REPORT
+==============================================================================
+
+OOS COMPARISON
+  BASELINE CAGR=3.83%  Sharpe=0.302  MaxDD=-18.85%  CVaR5=-2.82%
+  H8.1L    CAGR=4.42%  Sharpe=0.352  MaxDD=-17.41%  CVaR5=-2.55%
+
+SELECTION AUDIT
+             Method  MeanSharpe  MeanCAGR%  MeanMaxDD%  MeanRiskBudget  MeanInterventionRate
+BASELINE_6_1_FROZEN     0.30375      3.750     -15.510             NaN                   NaN
+                 H8     0.35355      4.555     -14.815           0.896                0.9166
+
+FOLD SUMMARY
+ fold                 train                  test  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  H8_CAGR%  H8_Sharpe  H8_MaxDD%  H8_CVaR5%  DeltaSharpe  MeanRiskBudget  InterventionRate  MissedReboundQQQ  RecoveryCaptureRate  PanicRate
+    3 2006-01-01→2017-12-29 2021-01-04→2022-12-30        4.53       0.3594       -15.41      3.30     0.2978     -15.50      -2.35      -0.0615          0.8710            0.9157             133.0               0.7820     0.4155
+    5 2006-01-01→2021-12-31 2024-07-01→2026-02-20        2.97       0.2481       -15.61      5.81     0.4093     -14.13      -2.75       0.1612          0.9209            0.9175             113.0               0.8148     0.0803
+
+REGIME COMPARISON
+  Regime  Days  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  H8_CAGR%  H8_Sharpe  H8_MaxDD%  DeltaSharpe
+  NORMAL   917       31.61       1.5253       -29.02     33.92     1.6124     -28.66       0.0871
+  STRESS   818       22.14       1.4365       -20.70     17.89     1.4586     -16.81       0.0221
+   PANIC  1495        4.30       0.5199       -13.26      1.95     0.3857     -11.62      -0.1342
+RECOVERY  7402       16.56       0.9429       -35.72     15.58     0.9453     -37.38       0.0024
