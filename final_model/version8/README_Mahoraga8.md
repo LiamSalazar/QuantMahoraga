@@ -25,3 +25,9 @@ This folder must already contain:
 ```bash
 python mahoraga8_runner.py
 ```
+
+
+## Optimization notes
+- The expensive fold-invariant core is cached once per fold.
+- Calibration is split into Stage 2A (regime fusion) and Stage 2B (cheap policy sweep).
+- Candidate scoring during calibration uses a fast summary path.

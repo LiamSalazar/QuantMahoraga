@@ -16,7 +16,7 @@ except Exception:
 from mahoraga8_config import Mahoraga8Config
 from mahoraga8_regime import build_regime_table
 from mahoraga8_policy import build_policy_table
-from mahoraga8_core import run_adaptive_core_backtest
+from mahoraga8_core import run_adaptive_core_backtest, precompute_static_core_cache
 
 
 def _future_window_return(returns_daily: pd.Series, weekly_idx: pd.DatetimeIndex, horizon_weeks: int) -> pd.Series:
@@ -40,6 +40,25 @@ def _future_window_return(returns_daily: pd.Series, weekly_idx: pd.DatetimeIndex
             continue
         vals[i] = np.expm1(cumlog[end_i + 1] - cumlog[pos + 1])
     return pd.Series(vals, index=weekly_idx, dtype=float)
+
+
+def _fast_summary(r: pd.Series, cfg: Mahoraga8Config) -> Dict[str, float]:
+    r = r.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    n = len(r)
+    if n == 0:
+        return {"Sharpe": 0.0, "CAGR": 0.0, "MaxDD": 0.0, "CVaR_5": 0.0}
+    mu = float(r.mean())
+    sd = float(r.std(ddof=1)) if n > 1 else 0.0
+    sharpe = float(mu / sd * np.sqrt(cfg.trading_days)) if sd > 1e-12 else 0.0
+    eq = (1.0 + r).cumprod()
+    years = max(n / float(cfg.trading_days), 1e-8)
+    cagr = float(eq.iloc[-1] ** (1.0 / years) - 1.0) if len(eq) else 0.0
+    dd = eq / eq.cummax() - 1.0
+    maxdd = float(dd.min()) if len(dd) else 0.0
+    q05 = float(r.quantile(0.05)) if n else 0.0
+    tail = r[r <= q05]
+    cvar = float(tail.mean()) if len(tail) else q05
+    return {"Sharpe": sharpe, "CAGR": cagr, "MaxDD": maxdd, "CVaR_5": cvar}
 
 
 def _panic_summary(ov_r: pd.Series, panic_state: pd.Series, cfg: Mahoraga8Config) -> Dict[str, float]:
@@ -180,11 +199,9 @@ def calibrate_mahoraga8(
 
     base_bt = m6.backtest(ohlcv, cfg_fold, costs, label="BASE_INNER", universe_schedule=universe_schedule)
     base_r = base_bt["returns_net"].loc[inner_val_start:inner_val_end]
-    base_eq = base_bt["equity"].loc[inner_val_start:inner_val_end]
-    base_exp = base_bt["exposure"].loc[inner_val_start:inner_val_end]
-    base_to = base_bt["turnover"].loc[inner_val_start:inner_val_end]
-    base_sum = m6.summarize(base_r, base_eq, base_exp, base_to, cfg_fold, "BASE_INNER")
+    base_sum = _fast_summary(base_r, cfg_fold)
     crisis_state_weekly = base_bt["crisis_state"].resample(cfg_fold.decision_freq).last().reindex(feat_full.index).ffill().fillna(0.0)
+    static_cache = precompute_static_core_cache(ohlcv, cfg_fold, costs, universe_schedule)
 
     s1_best, s1_df = _calibrate_stage1_hawkes(feat_full, train_start, inner_train_end, inner_val_start, inner_val_end, cfg_fold, crisis_state_weekly)
     hawkes_df_fixed, _ = h7._build_hawkes_signals(
@@ -197,16 +214,14 @@ def calibrate_mahoraga8(
     wk_idx = hawkes_df_fixed.index
     inner_train_idx = wk_idx[(wk_idx >= pd.Timestamp(train_start)) & (wk_idx <= pd.Timestamp(inner_train_end))]
     inner_val_idx = wk_idx[(wk_idx >= pd.Timestamp(inner_val_start)) & (wk_idx <= pd.Timestamp(inner_val_end))]
+    qqq_future = _future_window_return(base_bt["bench"]["QQQ_r"], wk_idx, cfg_fold.conformal_horizon_weeks)
 
     rows = []
     best_score = -np.inf
     best = None
 
-    for state_map, risk_budget_blend, exposure_cap_mult, vol_target_shift, hawkes_urgency_weight, hawkes_panic_boost, hawkes_recovery_boost in iproduct(
-        overrides["state_map_grid"],
-        overrides["risk_budget_blend_grid"],
-        overrides["exposure_cap_mult_grid"],
-        overrides["vol_target_shift_grid"],
+    # Stage 2A: expensive regime fusion only once per Hawkes-Markov combo
+    for hawkes_urgency_weight, hawkes_panic_boost, hawkes_recovery_boost in iproduct(
         overrides["hawkes_urgency_weight_grid"],
         overrides["hawkes_panic_boost_grid"],
         overrides["hawkes_recovery_boost_grid"],
@@ -217,70 +232,76 @@ def calibrate_mahoraga8(
             hawkes_panic_boost=float(hawkes_panic_boost),
             hawkes_recovery_boost=float(hawkes_recovery_boost),
         )
-        policy_table = build_policy_table(
-            regime_table,
-            cfg_fold,
-            state_map=str(state_map),
-            risk_budget_blend=float(risk_budget_blend),
-            exposure_cap_mult=float(exposure_cap_mult),
-            vol_target_shift=float(vol_target_shift),
-        )
-        ov_bt = run_adaptive_core_backtest(
-            ohlcv, cfg_fold, costs, universe_schedule,
-            regime_table, policy_table, label="H8_2HM_INNER",
-        )
-        ov_r = ov_bt["returns_net"].loc[inner_val_start:inner_val_end]
-        ov_eq = ov_bt["equity"].loc[inner_val_start:inner_val_end]
-        ov_exp = ov_bt["exposure"].loc[inner_val_start:inner_val_end]
-        ov_to = ov_bt["turnover"].loc[inner_val_start:inner_val_end]
-        ov_sum = m6.summarize(ov_r, ov_eq, ov_exp, ov_to, cfg_fold, "H8_2HM_INNER")
 
-        qqq_future = _future_window_return(base_bt["bench"]["QQQ_r"], regime_table.index, cfg_fold.conformal_horizon_weeks)
-        missed_rebound, _captured, recovery_capture_rate = _forward_positive_capture(policy_table.loc[inner_val_idx], qqq_future.loc[inner_val_idx])
-        state_val = policy_table["active_regime_state"].reindex(ov_r.index).ffill().fillna("NORMAL")
-        panic_metrics = _panic_summary(ov_r, state_val, cfg_fold)
-        stress_sharpe = _stress_sharpe_from_policy(ov_r, state_val, cfg_fold)
-        turnover_ann = float(ov_to.mean() * cfg_fold.trading_days) if len(ov_to) else 0.0
-        intervention_rate = float((policy_table.loc[inner_val_idx, "active_regime_state"] != "NORMAL").mean()) if len(inner_val_idx) else 0.0
-        worst_fold_proxy = min(0.0, ov_sum["Sharpe"] - base_sum["Sharpe"])
+        # Stage 2B: cheap policy sweep reusing static core + fixed regime table
+        for state_map, risk_budget_blend, exposure_cap_mult, vol_target_shift in iproduct(
+            overrides["state_map_grid"],
+            overrides["risk_budget_blend_grid"],
+            overrides["exposure_cap_mult_grid"],
+            overrides["vol_target_shift_grid"],
+        ):
+            policy_table = build_policy_table(
+                regime_table,
+                cfg_fold,
+                state_map=str(state_map),
+                risk_budget_blend=float(risk_budget_blend),
+                exposure_cap_mult=float(exposure_cap_mult),
+                vol_target_shift=float(vol_target_shift),
+            )
+            ov_bt = run_adaptive_core_backtest(
+                ohlcv, cfg_fold, costs, universe_schedule,
+                regime_table, policy_table, label="H8_2HM_INNER",
+                static_cache=static_cache,
+            )
+            ov_r = ov_bt["returns_net"].loc[inner_val_start:inner_val_end]
+            ov_sum = _fast_summary(ov_r, cfg_fold)
 
-        score = _score_candidate(
-            base_sum, ov_sum, panic_metrics["panic_sharpe"], stress_sharpe,
-            missed_rebound, recovery_capture_rate, turnover_ann, worst_fold_proxy,
-            intervention_rate, cfg_fold,
-        )
+            missed_rebound, _captured, recovery_capture_rate = _forward_positive_capture(policy_table.loc[inner_val_idx], qqq_future.loc[inner_val_idx])
+            state_val = policy_table["active_regime_state"].reindex(ov_r.index).ffill().fillna("NORMAL")
+            panic_metrics = _panic_summary(ov_r, state_val, cfg_fold)
+            stress_sharpe = _stress_sharpe_from_policy(ov_r, state_val, cfg_fold)
+            ov_to = ov_bt["turnover"].loc[inner_val_start:inner_val_end]
+            turnover_ann = float(ov_to.mean() * cfg_fold.trading_days) if len(ov_to) else 0.0
+            intervention_rate = float((policy_table.loc[inner_val_idx, "active_regime_state"] != "NORMAL").mean()) if len(inner_val_idx) else 0.0
+            worst_fold_proxy = min(0.0, ov_sum["Sharpe"] - base_sum["Sharpe"])
 
-        row = {
-            **s1_best,
-            "state_map": state_map,
-            "risk_budget_blend": risk_budget_blend,
-            "exposure_cap_mult": exposure_cap_mult,
-            "vol_target_shift": vol_target_shift,
-            "hawkes_urgency_weight": hawkes_urgency_weight,
-            "hawkes_panic_boost": hawkes_panic_boost,
-            "hawkes_recovery_boost": hawkes_recovery_boost,
-            "score": score,
-            "base_sharpe": base_sum["Sharpe"],
-            "ov_sharpe": ov_sum["Sharpe"],
-            "ov_cagr": ov_sum["CAGR"],
-            "ov_maxdd": ov_sum["MaxDD"],
-            "ov_cvar": ov_sum["CVaR_5"],
-            "missed_rebound": missed_rebound,
-            "recovery_capture_rate": recovery_capture_rate,
-            "panic_sharpe": panic_metrics["panic_sharpe"],
-            "stress_sharpe": stress_sharpe,
-            "turnover_ann": turnover_ann,
-            "intervention_rate": intervention_rate,
-        }
-        rows.append(row)
-        if score > best_score:
-            best_score = score
-            best = row.copy()
+            score = _score_candidate(
+                base_sum, ov_sum, panic_metrics["panic_sharpe"], stress_sharpe,
+                missed_rebound, recovery_capture_rate, turnover_ann, worst_fold_proxy,
+                intervention_rate, cfg_fold,
+            )
+
+            row = {
+                **s1_best,
+                "state_map": state_map,
+                "risk_budget_blend": risk_budget_blend,
+                "exposure_cap_mult": exposure_cap_mult,
+                "vol_target_shift": vol_target_shift,
+                "hawkes_urgency_weight": hawkes_urgency_weight,
+                "hawkes_panic_boost": hawkes_panic_boost,
+                "hawkes_recovery_boost": hawkes_recovery_boost,
+                "score": score,
+                "base_sharpe": base_sum["Sharpe"],
+                "ov_sharpe": ov_sum["Sharpe"],
+                "ov_cagr": ov_sum["CAGR"],
+                "ov_maxdd": ov_sum["MaxDD"],
+                "ov_cvar": ov_sum["CVaR_5"],
+                "missed_rebound": missed_rebound,
+                "recovery_capture_rate": recovery_capture_rate,
+                "panic_sharpe": panic_metrics["panic_sharpe"],
+                "stress_sharpe": stress_sharpe,
+                "turnover_ann": turnover_ann,
+                "intervention_rate": intervention_rate,
+            }
+            rows.append(row)
+            if score > best_score:
+                best_score = score
+                best = row.copy()
 
     calib_df = pd.DataFrame(rows).sort_values("score", ascending=False)
     if len(s1_df):
         s1 = s1_df.copy()
         s1["stage"] = "hawkes_only"
-        calib_df["stage"] = "markov_hawkes_fusion"
+        calib_df["stage"] = "markov_hawkes_fusion_optimized"
         calib_df = pd.concat([s1, calib_df], ignore_index=True, sort=False)
     return best, calib_df

@@ -48,6 +48,56 @@ def _compute_weights_base_like(
     )
 
 
+def precompute_static_core_cache(
+    ohlcv: Dict[str, pd.DataFrame],
+    cfg: Mahoraga8Config,
+    costs: m6.CostsConfig,
+    universe_schedule: Optional[pd.DataFrame],
+) -> Dict[str, Any]:
+    """
+    Expensive fold-invariant work for H8.2 HM.
+    Built once per fold and then reused across all policy candidates.
+    """
+    ctx = h7._precompute_overlay_context(ohlcv, cfg, costs, universe_schedule)
+    close = ctx["close"]
+    high = ctx["high"]
+    low = ctx["low"]
+    rets = ctx["rets"]
+
+    crisis_scale = ctx["crisis_scale"]
+    turb_scale = ctx["turb_scale"]
+    corr_scale = ctx["corr_scale"]
+
+    w_target = _compute_weights_base_like(ctx, cfg, universe_schedule)
+    w_after_stops, stop_hits = m6.apply_chandelier(w_target, close, high, low, cfg)
+    w_exec_1x = w_after_stops.shift(1).fillna(0.0)
+    gross_1x = (w_exec_1x * rets).sum(axis=1)
+
+    qqq_r = ctx["qqq_r"]
+    qqq_eq = cfg.capital_initial * (1.0 + qqq_r).cumprod()
+
+    return {
+        "ctx": ctx,
+        "close": close,
+        "high": high,
+        "low": low,
+        "rets": rets,
+        "crisis_scale": crisis_scale,
+        "turb_scale": turb_scale,
+        "corr_scale": corr_scale,
+        "crisis_state": ctx["crisis_state"],
+        "corr_state": ctx["corr_state"],
+        "corr_rho": ctx["corr_rho"],
+        "w_target": w_target,
+        "w_after_stops": w_after_stops,
+        "w_exec_1x": w_exec_1x,
+        "gross_1x": gross_1x,
+        "qqq_r": qqq_r,
+        "qqq_eq": qqq_eq,
+        "stop_hits": stop_hits,
+    }
+
+
 def _compute_risk_scaled_exposure(
     gross_1x: pd.Series,
     crisis_scale: pd.Series,
@@ -81,28 +131,22 @@ def run_adaptive_core_backtest(
     regime_table: pd.DataFrame,
     policy_table: pd.DataFrame,
     label: str,
+    static_cache: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    ctx = h7._precompute_overlay_context(ohlcv, cfg, costs, universe_schedule)
+    if static_cache is None:
+        static_cache = precompute_static_core_cache(ohlcv, cfg, costs, universe_schedule)
 
-    close = ctx["close"]
-    high = ctx["high"]
-    low = ctx["low"]
-    rets = ctx["rets"]
-
-    crisis_scale = ctx["crisis_scale"]
-    turb_scale = ctx["turb_scale"]
-    corr_scale = ctx["corr_scale"]
-    crisis_state = ctx["crisis_state"]
-    corr_state = ctx["corr_state"]
-    corr_rho = ctx["corr_rho"]
-
-    w_target = _compute_weights_base_like(ctx, cfg, universe_schedule)
-    w_after_stops, stop_hits = m6.apply_chandelier(w_target, close, high, low, cfg)
-    w_exec_1x = w_after_stops.shift(1).fillna(0.0)
+    rets = static_cache["rets"]
+    crisis_scale = static_cache["crisis_scale"]
+    turb_scale = static_cache["turb_scale"]
+    corr_scale = static_cache["corr_scale"]
+    w_target = static_cache["w_target"]
+    w_after_stops = static_cache["w_after_stops"]
+    w_exec_1x = static_cache["w_exec_1x"]
+    gross_1x = static_cache["gross_1x"]
 
     policy_daily = policy_table.reindex(rets.index).ffill().bfill()
 
-    gross_1x = (w_exec_1x * rets).sum(axis=1)
     total_scale, vol_sc = _compute_risk_scaled_exposure(
         gross_1x=gross_1x,
         crisis_scale=crisis_scale,
@@ -121,9 +165,6 @@ def run_adaptive_core_backtest(
     equity = cfg.capital_initial * (1.0 + port_net).cumprod()
     exposure = w_exec.abs().sum(axis=1).clip(0.0, cfg.max_exposure)
 
-    qqq_r = ctx["qqq_r"]
-    qqq_eq = cfg.capital_initial * (1.0 + qqq_r).cumprod()
-
     return {
         "label": label,
         "weights_target": w_target,
@@ -137,14 +178,14 @@ def run_adaptive_core_backtest(
         "risk_budget_applied": policy_daily["risk_budget_cap"].reindex(exposure.index).ffill().fillna(1.0),
         "state_series": policy_daily["active_regime_state"].reindex(exposure.index).ffill().fillna("NORMAL"),
         "policy_daily": policy_daily,
-        "bench": {"QQQ_r": qqq_r, "QQQ_eq": qqq_eq},
-        "crisis_state": crisis_state,
+        "bench": {"QQQ_r": static_cache["qqq_r"], "QQQ_eq": static_cache["qqq_eq"]},
+        "crisis_state": static_cache["crisis_state"],
         "crisis_scale": crisis_scale,
         "turb_scale": turb_scale,
         "corr_scale": corr_scale,
-        "corr_rho": corr_rho,
-        "corr_state": corr_state,
+        "corr_rho": static_cache["corr_rho"],
+        "corr_state": static_cache["corr_state"],
         "vol_scale": vol_sc,
         "total_scale_target": total_scale,
-        "stop_hits": stop_hits,
+        "stop_hits": static_cache["stop_hits"],
     }

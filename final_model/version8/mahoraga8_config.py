@@ -17,7 +17,6 @@ class Mahoraga8Config(h7.Mahoraga7Config):
     adaptive risk/exposure only.
     """
 
-    
     variant: str = "8.2HM"
     outputs_dir: str = "mahoraga8_2hm_outputs"
     plots_dir: str = "mahoraga8_2hm_plots"
@@ -117,86 +116,6 @@ class Mahoraga8Config(h7.Mahoraga7Config):
     score_pen_intervention: float = 0.10
     target_intervention_rate: float = 0.35
 
-    utility_dd_penalty: float = 0.40
-    inner_val_frac: float = 0.30
-    min_train_weeks: int = 80
-
-    # regime / BOCPD-lite
-    cp_hazard: float = 1.0 / 52.0
-    cp_max_run_length: int = 104
-    cp_prior_kappa: float = 1.0
-    cp_prior_alpha: float = 1.0
-    cp_prior_beta: float = 1.0
-    cp_prob_quantile: float = 0.90
-    cp_severity_quantile: float = 0.80
-    cp_transition_smoothing: int = 2
-
-    # Markov-lite filter
-    markov_state_count: int = 4
-    markov_p_stay_normal: float = 0.94
-    markov_p_stay_stress: float = 0.90
-    markov_p_stay_panic: float = 0.90
-    markov_p_stay_recovery: float = 0.90
-    markov_emission_scale: float = 2.0
-    markov_feature_scale: float = 1.0
-
-    # entry / exit / persistence
-    panic_entry_quantile: float = 0.90
-    panic_exit_quantile: float = 0.75
-    stress_entry_quantile: float = 0.72
-    stress_exit_quantile: float = 0.55
-    recovery_entry_quantile: float = 0.70
-    recovery_exit_quantile: float = 0.45
-
-    panic_min_persistence: int = 2
-    stress_min_persistence: int = 2
-    recovery_min_persistence: int = 2
-
-    # conformal / risk budget
-    conformal_horizon_weeks: int = 2
-    conformal_alpha: float = 0.90
-    conformal_l2: float = 1e-3
-    conformal_budget_low_q: float = 0.55
-    conformal_budget_high_q: float = 0.90
-    conformal_min_exposure: float = 0.25
-
-    # H8.2 HM adaptive risk only
-    vol_target_normal: float = 1.00
-    vol_target_stress: float = 0.85
-    vol_target_panic: float = 0.65
-    vol_target_recovery: float = 0.95
-
-    max_exposure_normal: float = 1.00
-    max_exposure_stress: float = 0.82
-    max_exposure_panic: float = 0.55
-    max_exposure_recovery: float = 0.92
-
-    # stage-2 search
-    state_map_grid: tuple[str, ...] = ("default", "defensive_plus", "balanced")
-    risk_budget_blend_grid: tuple[float, ...] = (0.50, 0.70, 0.85)
-    exposure_cap_mult_grid: tuple[float, ...] = (0.90, 1.00, 1.10)
-    vol_target_shift_grid: tuple[float, ...] = (-0.03, 0.00, 0.03)
-
-    hawkes_urgency_weight_grid: tuple[float, ...] = (0.35, 0.50, 0.65)
-    hawkes_panic_boost_grid: tuple[float, ...] = (0.00, 0.10, 0.20)
-    hawkes_recovery_boost_grid: tuple[float, ...] = (0.00, 0.08, 0.15)
-
-    # scoring
-    score_w_sharpe: float = 0.38
-    score_w_dd: float = 0.26
-    score_w_cagr: float = 0.08
-    score_w_cvar: float = 0.14
-    score_w_panic: float = 0.18
-    score_w_stress: float = 0.14
-    score_w_recovery_capture: float = 0.06
-    score_pen_missed_rebound: float = 0.10
-    score_pen_turnover: float = 0.02
-    score_pen_worst_fold: float = 0.25
-    score_pen_tail: float = 0.10
-    score_pen_intervention: float = 0.10
-    target_intervention_rate: float = 0.35
-
-    # split
     utility_dd_penalty: float = 0.40
     inner_val_frac: float = 0.30
     min_train_weeks: int = 80
