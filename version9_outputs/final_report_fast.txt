@@ -1,0 +1,8 @@
+MAHORAGA 9 — FINAL REPORT
+==============================================================================
+
+OOS COMPARISON
+  BASELINE CAGR=17.44%  Sharpe=1.059  MaxDD=-18.62%\n  V9       CAGR=12.04%  Sharpe=1.058  MaxDD=-15.32%\n\nFOLD SUMMARY
+ fold                 train                  test  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  V9_CAGR%  V9_Sharpe  V9_MaxDD% FragilityModel RecoveryModel  InterventionRate  MeanGate  MeanAlphaMix
+    1 2006-01-01→2013-12-31 2017-01-03→2018-12-31        9.22       0.6720       -14.18      5.81     0.6271      -9.92             rf            rf               1.0    0.8653        0.4514
+    2 2006-01-01→2015-12-31 2019-01-02→2020-12-31       26.22       1.3825       -18.62     18.60     1.4025     -15.32             rf            rf               1.0    0.8907        0.4541
