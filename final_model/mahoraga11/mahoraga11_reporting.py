@@ -43,8 +43,7 @@ def build_final_report_text(wf: Dict[str, Any], cfg: Mahoraga11Config) -> str:
     lines.append("")
     lines.append("FOLD SUMMARY")
     lines.append(fold_df.to_string(index=False))
-    return "
-".join(lines)
+    return "".join(lines)
 
 
 def save_outputs(wf: Dict[str, Any], cfg: Mahoraga11Config, ff=None) -> Dict[str, pd.DataFrame]:
