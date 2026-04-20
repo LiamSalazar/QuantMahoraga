@@ -17,6 +17,7 @@ class Mahoraga10Config(m6.Mahoraga6Config):
     outer_parallel: bool = True
     outer_backend: str = "loky"
     max_outer_jobs: int = 3
+    decision_freq: str = "W-FRI"
 
     # Evaluate all folds in both modes.
     fast_folds: Tuple[int, ...] = (1, 2, 3, 4, 5)

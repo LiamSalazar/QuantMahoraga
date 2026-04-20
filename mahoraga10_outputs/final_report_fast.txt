@@ -1,0 +1,20 @@
+MAHORAGA 10 — FINAL REPORT
+==============================================================================
+
+OOS COMPARISON
+  BASELINE CAGR=18.40%  Sharpe=1.005  MaxDD=-25.04%
+  M10      CAGR=13.56%  Sharpe=0.869  MaxDD=-20.49%
+  Stitched diff p-value=0.944391
+  Fold-level BHY max q-value=1.000000
+
+FLOOR / CEILING SUMMARY
+  Floor folds (3, 5): mean M10 Sharpe=0.3619
+  Ceiling folds (1, 2, 4): mean M10 Sharpe=1.1180
+
+FOLD SUMMARY
+ fold                 train                  test  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  M10_CAGR%  M10_Sharpe  M10_MaxDD% FragilityModel RecoveryModel  InterventionRate  MeanGate  MeanAlphaMix  Val_pvalue  Val_qvalue  Test_pvalue  Test_qvalue
+    1 2006-01-01→2013-12-31 2017-01-03→2018-12-31        9.22       0.6720       -14.18       7.63      0.6728       -9.26     logit_C1.0            rf            0.5637    0.8422          0.35    0.342461         1.0     0.646025     1.000000
+    2 2006-01-01→2015-12-31 2019-01-02→2020-12-31       26.22       1.3825       -18.62      24.65      1.3411      -18.63             rf            rf            0.4713    0.9608          0.35    0.137296         1.0     0.663190     1.000000
+    3 2006-01-01→2017-12-29 2021-01-04→2022-12-30        4.20       0.3433       -15.16       9.58      0.6734      -13.95             rf            rf            0.6461    0.9263          0.50    0.380630         1.0     0.060611     0.691976
+    4 2006-01-01→2019-12-31 2023-01-03→2024-06-28       67.67       2.1279       -18.95      30.20      1.3400      -14.61             rf            rf            0.7059    0.9210          0.50    0.545242         1.0     0.987615     1.000000
+    5 2006-01-01→2021-12-31 2024-07-01→2026-02-20        2.93       0.2483       -14.88      -0.27      0.0505      -10.18             rf            rf            0.6375    0.8365          0.50    0.468302         1.0     0.670540     1.000000
