@@ -12,6 +12,10 @@ class Mahoraga12Config(m6.Mahoraga6Config):
     label: str = "MAHORAGA_12"
     outputs_dir: str = "mahoraga12_outputs"
     plots_dir: str = "mahoraga12_plots"
+    official_baseline_label: str = "BASE_ALPHA"
+    historical_benchmark_label: str = "LEGACY"
+    model_label: str = "M12"
+    current_model_label: str = "M12_CURRENT"
 
     weight_cap: float = 0.60
     k_atr: float = 3.0
@@ -44,6 +48,7 @@ class Mahoraga12Config(m6.Mahoraga6Config):
     floor_override_rate_cap: float = 0.42
     max_gate_scale: float = 1.10
     recovery_memory_weeks: int = 3
+    continuation_enter_buffer: float = 0.08
 
     # Alpha design.
     residual_beta_window: int = 63

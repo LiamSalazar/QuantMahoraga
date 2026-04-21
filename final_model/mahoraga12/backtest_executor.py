@@ -27,10 +27,13 @@ from structural_defense_model import (
     fit_structural_defense_model,
 )
 from transition_recovery_model import (
+    annotate_continuation_labels,
     annotate_transition_recovery_labels,
+    apply_continuation_model,
     apply_recovery_model,
     apply_transition_model,
     build_hawkes_transition_features,
+    fit_continuation_model,
     fit_recovery_model,
     fit_transition_model,
 )
@@ -380,12 +383,124 @@ def _candidate_support(calib_df: pd.DataFrame, selected_id: float, cfg: Mahoraga
     return support[[c for c in keep if c in support.columns]]
 
 
-def _stitch(results: List[Dict[str, Any]], key: str) -> Dict[str, pd.Series]:
-    bt_list = [r[key] for r in results]
-    ret = pd.concat([b["returns_net"] for b in bt_list]).sort_index()
-    exp = pd.concat([b["exposure"] for b in bt_list]).sort_index().reindex(ret.index).fillna(0.0)
-    turnover = pd.concat([b["turnover"] for b in bt_list]).sort_index().reindex(ret.index).fillna(0.0)
-    return {"returns": ret, "exposure": exp, "turnover": turnover}
+def _slice_bt_to_test_window(bt: Dict[str, Any], start: pd.Timestamp, end: pd.Timestamp) -> Dict[str, pd.Series]:
+    returns = bt["returns_net"].loc[start:end].copy()
+    if len(returns) == 0:
+        raise ValueError(f"Empty test window slice for {bt.get('label', 'UNKNOWN')} between {start} and {end}.")
+    exposure = bt["exposure"].reindex(returns.index).fillna(0.0).copy()
+    turnover = bt["turnover"].reindex(returns.index).fillna(0.0).copy()
+    equity = bt.get("equity", pd.Series(dtype=float)).reindex(returns.index)
+    return {
+        "returns": returns,
+        "exposure": exposure,
+        "turnover": turnover,
+        "equity": equity if len(equity) else pd.Series(dtype=float),
+    }
+
+
+def _stitch_from_getter(results: List[Dict[str, Any]], getter, cfg: Mahoraga12Config, label: str) -> Dict[str, Any]:
+    # Each fold backtest is fit on history through test_end, but stitched OOS must contain only
+    # the held-out test window for that fold. Slicing here prevents train/validation leakage.
+    slices: List[Dict[str, pd.Series]] = []
+    trace_rows: List[Dict[str, Any]] = []
+    for result in results:
+        start = pd.Timestamp(result["test_start"])
+        end = pd.Timestamp(result["test_end"])
+        bt = getter(result)
+        window = _slice_bt_to_test_window(bt, start, end)
+        slices.append(window)
+        trace_rows.append(
+            {
+                "Label": label,
+                "Fold": int(result["fold"]),
+                "SourceBacktest": bt.get("label", label),
+                "WindowType": "TEST_ONLY",
+                "RequestedStart": start,
+                "RequestedEnd": end,
+                "SliceStart": window["returns"].index.min(),
+                "SliceEnd": window["returns"].index.max(),
+                "Rows": int(len(window["returns"])),
+            }
+        )
+
+    returns = pd.concat([window["returns"] for window in slices]).sort_index()
+    if returns.index.has_duplicates:
+        dupes = returns.index[returns.index.duplicated()].unique()
+        raise ValueError(f"Duplicate periods detected in stitched {label}: {list(dupes[:5])}")
+    exposure = pd.concat([window["exposure"] for window in slices]).sort_index().reindex(returns.index).fillna(0.0)
+    turnover = pd.concat([window["turnover"] for window in slices]).sort_index().reindex(returns.index).fillna(0.0)
+    equity = cfg.capital_initial * (1.0 + returns).cumprod()
+    trace = pd.DataFrame(trace_rows).sort_values(["Fold", "SliceStart"]).reset_index(drop=True)
+    return {
+        "label": label,
+        "returns": returns,
+        "exposure": exposure,
+        "turnover": turnover,
+        "equity": equity,
+        "trace": trace,
+    }
+
+
+def _stitch(results: List[Dict[str, Any]], key: str, cfg: Mahoraga12Config, label: str) -> Dict[str, Any]:
+    return _stitch_from_getter(results, lambda result: result[key], cfg, label)
+
+
+def _neutralize_pre_test_override(override_daily: pd.DataFrame, test_start: pd.Timestamp) -> pd.DataFrame:
+    out = override_daily.copy()
+    pre_test_mask = out.index < test_start
+    if pre_test_mask.any():
+        out.loc[pre_test_mask, "override_type"] = "BASELINE"
+        out.loc[pre_test_mask, "override_detail"] = "BASELINE"
+        out.loc[pre_test_mask, "defense_blend"] = 0.0
+        out.loc[pre_test_mask, "gate_scale"] = 1.0
+        out.loc[pre_test_mask, "vol_mult"] = 1.0
+        out.loc[pre_test_mask, "exp_cap"] = 1.0
+        out.loc[pre_test_mask, "is_override"] = 0.0
+        out.loc[pre_test_mask, "is_structural_override"] = 0.0
+        out.loc[pre_test_mask, "is_transition_override"] = 0.0
+        out.loc[pre_test_mask, "is_recovery_lift"] = 0.0
+        if "is_continuation_reentry" in out.columns:
+            out.loc[pre_test_mask, "is_continuation_reentry"] = 0.0
+    return out
+
+
+def _run_variant_backtest(
+    weekly_full: pd.DataFrame,
+    variant_mode: str,
+    enable_continuation: bool,
+    variant_label: str,
+    policy_params: Dict[str, float],
+    pre: Dict[str, Any],
+    base_cache_full: Dict[str, Any],
+    defense_cache_full: Dict[str, Any],
+    test_start: pd.Timestamp,
+    test_end: pd.Timestamp,
+    cfg_fold: Mahoraga12Config,
+    costs: m6.CostsConfig,
+    fold_n: int,
+) -> Dict[str, Any]:
+    override_weekly_full = build_override_weekly(
+        weekly_full.loc[:test_end],
+        policy_params,
+        cfg_fold,
+        variant=variant_mode,
+        enable_continuation=enable_continuation,
+    )
+    override_weekly = override_weekly_full.loc[test_start:test_end].copy()
+    override_daily = weekly_to_daily_override(override_weekly_full, pre["idx"], cfg_fold)
+    override_daily = _neutralize_pre_test_override(override_daily, test_start)
+    weights_exec_1x = blend_engine_paths(base_cache_full, defense_cache_full, override_daily["defense_blend"])
+    bt = backtest_from_1x_weights(
+        pre,
+        weights_exec_1x,
+        override_daily["gate_scale"],
+        override_daily["vol_mult"],
+        override_daily["exp_cap"],
+        cfg_fold,
+        costs,
+        label=f"{variant_label}_{fold_n}",
+    )
+    return {"bt": bt, "override_weekly": override_weekly.assign(fold=fold_n), "override_daily": override_daily}
 
 
 def _prepare_weekly_candidate_frame(
@@ -402,6 +517,7 @@ def _prepare_weekly_candidate_frame(
     weekly = weekly.join(hawkes, how="left")
     weekly = annotate_structural_labels(weekly, train_end)
     weekly = annotate_transition_recovery_labels(weekly, train_end)
+    weekly = annotate_continuation_labels(weekly, train_end)
     return weekly, thresholds
 
 
@@ -565,43 +681,93 @@ def _run_single_fold(
     structural_fit = fit_structural_defense_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
     transition_fit = fit_transition_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
     recovery_fit = fit_recovery_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
+    continuation_fit = fit_continuation_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
 
     weekly_full, _ = _prepare_weekly_candidate_frame(base_bt, base_cache_full, market_ctx_full, cfg_fold, train_end, hawkes_thresholds=hawkes_thresholds)
     weekly_full["structural_p"] = apply_structural_defense_model(structural_fit, weekly_full)
     weekly_full["transition_p"] = apply_transition_model(transition_fit, weekly_full)
     weekly_full["recovery_p"] = apply_recovery_model(recovery_fit, weekly_full)
+    weekly_full["continuation_p"] = apply_continuation_model(continuation_fit, weekly_full)
 
     policy_params = {k: float(best[k]) for k in cfg_fold.policy_grid().keys()}
-    override_weekly_full = build_override_weekly(weekly_full.loc[:test_end], policy_params, cfg_fold)
-    override_weekly = override_weekly_full.loc[test_start:test_end].copy()
-    override_daily = weekly_to_daily_override(override_weekly_full, pre["idx"], cfg_fold)
-    pre_test_mask = override_daily.index < test_start
-    if pre_test_mask.any():
-        override_daily.loc[pre_test_mask, "override_type"] = "BASELINE"
-        override_daily.loc[pre_test_mask, "override_detail"] = "BASELINE"
-        override_daily.loc[pre_test_mask, "defense_blend"] = 0.0
-        override_daily.loc[pre_test_mask, "gate_scale"] = 1.0
-        override_daily.loc[pre_test_mask, "vol_mult"] = 1.0
-        override_daily.loc[pre_test_mask, "exp_cap"] = 1.0
-        override_daily.loc[pre_test_mask, "is_override"] = 0.0
-        override_daily.loc[pre_test_mask, "is_structural_override"] = 0.0
-        override_daily.loc[pre_test_mask, "is_transition_override"] = 0.0
-        override_daily.loc[pre_test_mask, "is_recovery_lift"] = 0.0
-
-    weights_exec_1x = blend_engine_paths(base_cache_full, defense_cache_full, override_daily["defense_blend"])
-    model_bt = backtest_from_1x_weights(
-        pre,
-        weights_exec_1x,
-        override_daily["gate_scale"],
-        override_daily["vol_mult"],
-        override_daily["exp_cap"],
-        cfg_fold,
-        costs,
-        label=f"M12_{fold_n}",
+    structural_variant = _run_variant_backtest(
+        weekly_full,
+        variant_mode="STRUCTURAL_ONLY",
+        enable_continuation=False,
+        variant_label="STRUCTURAL_ONLY",
+        policy_params=policy_params,
+        pre=pre,
+        base_cache_full=base_cache_full,
+        defense_cache_full=defense_cache_full,
+        test_start=test_start,
+        test_end=test_end,
+        cfg_fold=cfg_fold,
+        costs=costs,
+        fold_n=fold_n,
     )
+    transition_variant = _run_variant_backtest(
+        weekly_full,
+        variant_mode="TRANSITION_ONLY",
+        enable_continuation=True,
+        variant_label="TRANSITION_ONLY",
+        policy_params=policy_params,
+        pre=pre,
+        base_cache_full=base_cache_full,
+        defense_cache_full=defense_cache_full,
+        test_start=test_start,
+        test_end=test_end,
+        cfg_fold=cfg_fold,
+        costs=costs,
+        fold_n=fold_n,
+    )
+    current_variant = _run_variant_backtest(
+        weekly_full,
+        variant_mode="FULL",
+        enable_continuation=False,
+        variant_label=cfg_fold.current_model_label,
+        policy_params=policy_params,
+        pre=pre,
+        base_cache_full=base_cache_full,
+        defense_cache_full=defense_cache_full,
+        test_start=test_start,
+        test_end=test_end,
+        cfg_fold=cfg_fold,
+        costs=costs,
+        fold_n=fold_n,
+    )
+    official_variant = _run_variant_backtest(
+        weekly_full,
+        variant_mode="FULL",
+        enable_continuation=True,
+        variant_label=cfg_fold.model_label,
+        policy_params=policy_params,
+        pre=pre,
+        base_cache_full=base_cache_full,
+        defense_cache_full=defense_cache_full,
+        test_start=test_start,
+        test_end=test_end,
+        cfg_fold=cfg_fold,
+        costs=costs,
+        fold_n=fold_n,
+    )
+
+    model_bt = official_variant["bt"]
+    model_bt_current = current_variant["bt"]
+    override_weekly = official_variant["override_weekly"]
+    override_daily = official_variant["override_daily"]
+    override_weekly_current = current_variant["override_weekly"]
+    override_daily_current = current_variant["override_daily"]
+    variant_bts = {
+        cfg_fold.official_baseline_label: base_bt,
+        "STRUCTURAL_DEFENSE_ONLY": structural_variant["bt"],
+        "TRANSITION_ONLY": transition_variant["bt"],
+        "FULL_OVERRIDES_CURRENT": model_bt_current,
+        "FULL_OVERRIDES": model_bt,
+    }
 
     s_legacy = _summarize_window(legacy_bt, test_start, test_end, cfg_fold, f"LEGACY_{fold_n}")
     s_base = _summarize_window(base_bt, test_start, test_end, cfg_fold, f"BASE_{fold_n}")
+    s_model_current = _summarize_window(model_bt_current, test_start, test_end, cfg_fold, f"{cfg_fold.current_model_label}_{fold_n}")
     s_model = _summarize_window(model_bt, test_start, test_end, cfg_fold, f"M12_{fold_n}")
 
     legacy_r = legacy_bt["returns_net"].loc[test_start:test_end]
@@ -618,16 +784,22 @@ def _run_single_fold(
         "BASE_CAGR%": round(s_base["CAGR"] * 100, 2),
         "BASE_Sharpe": round(s_base["Sharpe"], 4),
         "BASE_MaxDD%": round(s_base["MaxDD"] * 100, 2),
+        "M12_Current_CAGR%": round(s_model_current["CAGR"] * 100, 2),
+        "M12_Current_Sharpe": round(s_model_current["Sharpe"], 4),
+        "M12_Current_MaxDD%": round(s_model_current["MaxDD"] * 100, 2),
         "M12_CAGR%": round(s_model["CAGR"] * 100, 2),
         "M12_Sharpe": round(s_model["Sharpe"], 4),
         "M12_MaxDD%": round(s_model["MaxDD"] * 100, 2),
         "StructuralModel": structural_fit["name"],
         "TransitionModel": transition_fit["name"],
         "RecoveryModel": recovery_fit["name"],
+        "ContinuationModel": continuation_fit["name"],
         "OverrideRate": round(float(override_daily["is_override"].loc[test_start:test_end].mean()), 4),
+        "CurrentOverrideRate": round(float(override_daily_current["is_override"].loc[test_start:test_end].mean()), 4),
         "StructuralRate": round(float(override_daily["is_structural_override"].loc[test_start:test_end].mean()), 4),
         "TransitionRate": round(float(override_daily["is_transition_override"].loc[test_start:test_end].mean()), 4),
         "RecoveryLiftRate": round(float(override_daily["is_recovery_lift"].loc[test_start:test_end].mean()), 4),
+        "ContinuationReentryRate": round(float(override_daily["is_continuation_reentry"].loc[test_start:test_end].mean()), 4),
         "MeanGate": round(float(override_daily["gate_scale"].loc[test_start:test_end].mean()), 4),
         "MeanDefenseBlend": round(float(override_daily["defense_blend"].loc[test_start:test_end].mean()), 4),
         "Base_vs_Legacy_Val_pvalue": round(float(best.get("base_vs_legacy_val_pvalue", 1.0)), 6),
@@ -649,6 +821,7 @@ def _run_single_fold(
         "StructuralModel": structural_fit["name"],
         "TransitionModel": transition_fit["name"],
         "RecoveryModel": recovery_fit["name"],
+        "ContinuationModel": continuation_fit["name"],
         **{k: best.get(k) for k in list(cfg_fold.engine_grid().keys()) + list(cfg_fold.policy_grid().keys())},
         "utility": best.get("utility", np.nan),
         "base_vs_legacy_val_pvalue": best.get("base_vs_legacy_val_pvalue", np.nan),
@@ -661,12 +834,17 @@ def _run_single_fold(
 
     return {
         "fold": fold_n,
+        "test_start": test_start,
+        "test_end": test_end,
         "legacy_bt": legacy_bt,
         "base_bt": base_bt,
+        "m12_current_bt": model_bt_current,
         "m12_bt": model_bt,
+        "variant_bts": variant_bts,
         "fold_row": fold_row,
         "calibration_df": calib_df,
-        "override_weekly": override_weekly.assign(fold=fold_n),
+        "override_weekly": override_weekly,
+        "override_weekly_current": override_weekly_current,
         "selected_candidate": selected_candidate,
         "selection_support": _candidate_support(calib_df, float(best.get("candidate_id", -1)), cfg_fold).assign(fold=fold_n),
     }
@@ -698,15 +876,48 @@ def run_walk_forward_mahoraga12(
 
     selected_df = pd.DataFrame([r["selected_candidate"] for r in results]).sort_values("fold") if results else pd.DataFrame()
     support_df = pd.concat([r["selection_support"] for r in results], axis=0, ignore_index=True) if results else pd.DataFrame()
-    stitched_legacy = _stitch(results, "legacy_bt")
-    stitched_base = _stitch(results, "base_bt")
-    stitched_model = _stitch(results, "m12_bt")
+    stitched_legacy = _stitch(results, "legacy_bt", cfg, cfg.historical_benchmark_label)
+    stitched_base = _stitch(results, "base_bt", cfg, cfg.official_baseline_label)
+    stitched_model_current = _stitch(results, "m12_current_bt", cfg, cfg.current_model_label)
+    stitched_model = _stitch(results, "m12_bt", cfg, cfg.model_label)
+    stitched_variants = {
+        cfg.official_baseline_label: stitched_base,
+        "STRUCTURAL_DEFENSE_ONLY": _stitch_from_getter(
+            results,
+            lambda result: result["variant_bts"]["STRUCTURAL_DEFENSE_ONLY"],
+            cfg,
+            "STRUCTURAL_DEFENSE_ONLY",
+        ),
+        "TRANSITION_ONLY": _stitch_from_getter(
+            results,
+            lambda result: result["variant_bts"]["TRANSITION_ONLY"],
+            cfg,
+            "TRANSITION_ONLY",
+        ),
+        "FULL_OVERRIDES": _stitch_from_getter(
+            results,
+            lambda result: result["variant_bts"]["FULL_OVERRIDES"],
+            cfg,
+            "FULL_OVERRIDES",
+        ),
+        "FULL_OVERRIDES_CURRENT": _stitch_from_getter(
+            results,
+            lambda result: result["variant_bts"]["FULL_OVERRIDES_CURRENT"],
+            cfg,
+            "FULL_OVERRIDES_CURRENT",
+        ),
+    }
     return {
         "results": results,
         "fold_df": fold_df,
         "selected_df": selected_df,
         "support_df": support_df,
+        "official_baseline": cfg.official_baseline_label,
+        "historical_benchmark": cfg.historical_benchmark_label,
         "stitched_legacy": stitched_legacy,
         "stitched_base": stitched_base,
+        "stitched_m12_current": stitched_model_current,
         "stitched_m12": stitched_model,
+        "stitched_variants": stitched_variants,
+        "stitched_test_trace": stitched_model["trace"].copy(),
     }

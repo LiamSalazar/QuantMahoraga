@@ -19,16 +19,33 @@ def _normalize_signal(series: pd.Series) -> pd.Series:
     return pd.Series(sigmoid(z.fillna(0.0)), index=s.index)
 
 
+def _variant_flags(variant: str) -> Dict[str, bool]:
+    name = str(variant).strip().upper()
+    if name == "BASELINE":
+        return {"allow_structural": False, "allow_transition": False}
+    if name == "STRUCTURAL_ONLY":
+        return {"allow_structural": True, "allow_transition": False}
+    if name == "TRANSITION_ONLY":
+        return {"allow_structural": False, "allow_transition": True}
+    if name == "FULL":
+        return {"allow_structural": True, "allow_transition": True}
+    raise ValueError(f"Unknown override variant: {variant}")
+
+
 def build_override_weekly(
     weekly_df: pd.DataFrame,
     policy_params: Dict[str, float],
     cfg: Mahoraga12Config,
+    variant: str = "FULL",
+    enable_continuation: bool = False,
 ) -> pd.DataFrame:
     out = weekly_df.copy()
+    flags = _variant_flags(variant)
     hawkes_weight = float(policy_params["hawkes_weight"])
 
     stress_hawkes = _normalize_signal(out.get("transition_hawkes_stress", pd.Series(0.0, index=out.index)))
     recovery_hawkes = _normalize_signal(out.get("transition_hawkes_recovery", pd.Series(0.0, index=out.index)))
+    continuation_p = pd.Series(out.get("continuation_p", pd.Series(0.0, index=out.index)), index=out.index, dtype=float).fillna(0.0)
 
     structural_path = pd.Series(
         sigmoid(
@@ -69,12 +86,30 @@ def build_override_weekly(
         ),
         index=out.index,
     )
+    continuation_path = pd.Series(
+        sigmoid(
+            1.8 * (1.0 - out["base_eff_4w"].clip(0.0, 1.0))
+            + 0.9 * np.log1p(out["down_up_ratio_4w"].clip(lower=0.0))
+            + 1.0 * out["stop_release_2w"]
+            + 0.9 * out["breadth_rebound_4w"]
+            + 0.8 * out["scale_recovery_2w"]
+            + 0.7 * out["corr_release_4w"]
+            + 0.7 * out["qqq_rebound_2w"]
+            + 0.5 * out["recovery_p"]
+            - 1.1 * out["loss_share_4w"]
+            - 0.9 * (-out["base_dd"])
+            - 0.6 * stress_hawkes
+        ),
+        index=out.index,
+    )
 
     out["structural_path_score"] = structural_path.clip(0.0, 1.0)
     out["transition_path_score"] = transition_path.clip(0.0, 1.0)
     out["recovery_path_score"] = recovery_path.clip(0.0, 1.0)
+    out["continuation_path_score"] = continuation_path.clip(0.0, 1.0)
     out["stress_hawkes_norm"] = stress_hawkes
     out["recovery_hawkes_norm"] = recovery_hawkes
+    out["continuation_p"] = continuation_p
 
     out["structural_score"] = (
         0.74 * out["structural_p"]
@@ -91,11 +126,17 @@ def build_override_weekly(
         + 0.25 * out["recovery_path_score"]
         + 0.17 * hawkes_weight * recovery_hawkes
     ).clip(0.0, 1.0)
+    out["continuation_score"] = (
+        0.64 * continuation_p
+        + 0.26 * out["continuation_path_score"]
+        + 0.10 * hawkes_weight * recovery_hawkes
+    ).clip(0.0, 1.0)
 
     structural_enter = float(policy_params["structural_enter_thr"])
     structural_exit = max(0.46, structural_enter - 0.12)
     transition_enter = float(policy_params["transition_enter_thr"])
     recovery_enter = float(policy_params["recovery_enter_thr"])
+    continuation_enter = min(0.95, max(structural_enter, recovery_enter) + cfg.continuation_enter_buffer)
 
     out["override_type"] = "BASELINE"
     out["override_detail"] = "BASELINE"
@@ -107,6 +148,7 @@ def build_override_weekly(
     out["is_structural_override"] = 0.0
     out["is_transition_override"] = 0.0
     out["is_recovery_lift"] = 0.0
+    out["is_continuation_reentry"] = 0.0
 
     structural_on = False
     stress_memory = 0
@@ -130,6 +172,13 @@ def build_override_weekly(
             or (row["corr_release_4w"] > 0.0)
             or (row["qqq_rebound_2w"] >= 0.02)
         )
+        continuation_guard = (
+            (row["stop_release_2w"] > 0.0)
+            or (row["breadth_rebound_4w"] > 0.0)
+            or (row["scale_recovery_2w"] > 0.0)
+            or (row["corr_release_4w"] > 0.0)
+            or (row["qqq_rebound_2w"] > 0.0)
+        )
 
         if structural_on:
             structural_exit_ok = (
@@ -139,7 +188,7 @@ def build_override_weekly(
             if structural_exit_ok:
                 structural_on = False
 
-        if not structural_on and row["structural_score"] >= structural_enter and structural_guard:
+        if flags["allow_structural"] and not structural_on and row["structural_score"] >= structural_enter and structural_guard:
             structural_on = True
 
         if structural_on:
@@ -154,7 +203,7 @@ def build_override_weekly(
             stress_memory = cfg.recovery_memory_weeks
             continue
 
-        if row["transition_score"] >= transition_enter and transition_guard:
+        if flags["allow_transition"] and row["transition_score"] >= transition_enter and transition_guard:
             out.loc[dt, "override_type"] = "TRANSITION_RECOVERY"
             out.loc[dt, "override_detail"] = "TRANSITION_STRESS"
             out.loc[dt, "defense_blend"] = float(policy_params["transition_blend"])
@@ -166,7 +215,30 @@ def build_override_weekly(
             stress_memory = cfg.recovery_memory_weeks
             continue
 
+        continuation_admissible = (
+            flags["allow_transition"]
+            and enable_continuation
+            and continuation_guard
+            and (row["continuation_score"] >= continuation_enter)
+            and (row["continuation_score"] >= row["recovery_score"])
+            and (row["structural_score"] <= structural_enter - 0.06)
+            and (row["transition_score"] <= transition_enter + 0.04)
+        )
+        if continuation_admissible:
+            out.loc[dt, "override_type"] = "TRANSITION_RECOVERY"
+            out.loc[dt, "override_detail"] = "CONTINUATION_REENTRY"
+            out.loc[dt, "defense_blend"] = 0.0
+            out.loc[dt, "gate_scale"] = max(1.0, float(policy_params["recovery_gate"]))
+            out.loc[dt, "vol_mult"] = max(1.0, float(policy_params["recovery_vol_mult"]))
+            out.loc[dt, "exp_cap"] = max(1.0, float(policy_params["recovery_exp_cap"]))
+            out.loc[dt, "is_override"] = 1.0
+            out.loc[dt, "is_transition_override"] = 1.0
+            out.loc[dt, "is_continuation_reentry"] = 1.0
+            continue
+
         recovery_admissible = (
+            flags["allow_transition"]
+            and
             (stress_memory > 0)
             and recovery_guard
             and (row["recovery_score"] >= recovery_enter)
@@ -201,12 +273,15 @@ def weekly_to_daily_override(override_weekly: pd.DataFrame, idx: pd.DatetimeInde
         "is_structural_override",
         "is_transition_override",
         "is_recovery_lift",
+        "is_continuation_reentry",
         "structural_score",
         "transition_score",
         "recovery_score",
+        "continuation_score",
         "structural_p",
         "transition_p",
         "recovery_p",
+        "continuation_p",
     ]
     out = override_weekly[cols].reindex(idx).ffill()
     out["defense_blend"] = out["defense_blend"].fillna(0.0).clip(0.0, 1.0)
@@ -217,8 +292,18 @@ def weekly_to_daily_override(override_weekly: pd.DataFrame, idx: pd.DatetimeInde
     out["is_structural_override"] = out["is_structural_override"].fillna(0.0)
     out["is_transition_override"] = out["is_transition_override"].fillna(0.0)
     out["is_recovery_lift"] = out["is_recovery_lift"].fillna(0.0)
+    out["is_continuation_reentry"] = out["is_continuation_reentry"].fillna(0.0)
     out["override_type"] = out["override_type"].fillna("BASELINE")
     out["override_detail"] = out["override_detail"].fillna("BASELINE")
-    for col in ["structural_score", "transition_score", "recovery_score", "structural_p", "transition_p", "recovery_p"]:
+    for col in [
+        "structural_score",
+        "transition_score",
+        "recovery_score",
+        "continuation_score",
+        "structural_p",
+        "transition_p",
+        "recovery_p",
+        "continuation_p",
+    ]:
         out[col] = out[col].fillna(0.0)
     return out

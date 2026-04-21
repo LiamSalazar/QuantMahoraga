@@ -54,6 +54,28 @@ RECOVERY_FEATURES = [
 ]
 
 
+CONTINUATION_FEATURES = [
+    "base_ret_1w",
+    "base_ret_2w",
+    "base_ret_4w",
+    "base_dd",
+    "base_dd_duration_4w",
+    "base_dd_velocity_2w",
+    "base_eff_2w",
+    "base_eff_4w",
+    "down_up_ratio_4w",
+    "loss_share_4w",
+    "xs_disp_21",
+    "stop_release_2w",
+    "breadth_rebound_4w",
+    "scale_recovery_2w",
+    "corr_release_4w",
+    "qqq_rebound_2w",
+    "transition_hawkes_recovery",
+    "transition_hawkes_stress",
+]
+
+
 def _future_compound_return(r: pd.Series, horizon: int) -> pd.Series:
     out = pd.Series(np.nan, index=r.index, dtype=float)
     vals = r.fillna(0.0).values
@@ -75,6 +97,17 @@ def _future_drawdown_change(eq: pd.Series, horizon: int) -> pd.Series:
         if j <= i + 1:
             continue
         out.iloc[i] = float(np.nanmin(vals[i + 1:j]) - vals[i])
+    return out
+
+
+def _future_positive_share(r: pd.Series, horizon: int) -> pd.Series:
+    out = pd.Series(np.nan, index=r.index, dtype=float)
+    vals = r.fillna(0.0).values
+    for i in range(len(r)):
+        j = min(len(r), i + horizon + 1)
+        if j <= i + 1:
+            continue
+        out.iloc[i] = float(np.mean(vals[i + 1:j] > 0.0))
     return out
 
 
@@ -158,6 +191,56 @@ def annotate_transition_recovery_labels(weekly_df: pd.DataFrame, train_end: pd.T
     return out
 
 
+def annotate_continuation_labels(weekly_df: pd.DataFrame, train_end: pd.Timestamp) -> pd.DataFrame:
+    out = weekly_df.copy()
+    train_idx = out.loc[:train_end].index
+
+    fwd3 = _future_compound_return(out["base_r"], 3)
+    dd3 = _future_drawdown_change(out["base_eq"], 3)
+    pos3 = _future_positive_share(out["base_r"], 3)
+
+    eff_low = float(out.loc[train_idx, "base_eff_4w"].dropna().quantile(0.40)) if len(train_idx) else 0.35
+    chop_high = float(out.loc[train_idx, "down_up_ratio_4w"].dropna().quantile(0.60)) if len(train_idx) else 1.15
+    dd_floor = float(out.loc[train_idx, "base_dd"].dropna().quantile(0.20)) if len(train_idx) else -0.08
+    dd_cap = float(out.loc[train_idx, "base_dd"].dropna().quantile(0.70)) if len(train_idx) else -0.01
+    loss_cap = float(out.loc[train_idx, "loss_share_4w"].dropna().quantile(0.70)) if len(train_idx) else 0.65
+    release_high = float(out.loc[train_idx, "stop_release_2w"].dropna().quantile(0.55)) if len(train_idx) else 0.0
+    breadth_high = float(out.loc[train_idx, "breadth_rebound_4w"].dropna().quantile(0.55)) if len(train_idx) else 0.0
+    scale_high = float(out.loc[train_idx, "scale_recovery_2w"].dropna().quantile(0.55)) if len(train_idx) else 0.0
+    corr_high = float(out.loc[train_idx, "corr_release_4w"].dropna().quantile(0.55)) if len(train_idx) else 0.0
+    qqq_high = float(out.loc[train_idx, "qqq_rebound_2w"].dropna().quantile(0.55)) if len(train_idx) else 0.0
+    ret_high = float(out.loc[train_idx, "base_ret_1w"].dropna().quantile(0.60)) if len(train_idx) else 0.01
+    fwd_high = float(fwd3.loc[train_idx].dropna().quantile(0.70)) if len(train_idx) else 0.02
+    dd_future_floor = float(dd3.loc[train_idx].dropna().quantile(0.45)) if len(train_idx) else -0.02
+    pos_future_high = float(pos3.loc[train_idx].dropna().quantile(0.60)) if len(train_idx) else 2.0 / 3.0
+
+    compression_now = (
+        (out["base_eff_4w"] <= eff_low)
+        & (out["down_up_ratio_4w"] >= chop_high)
+    )
+    pause_now = (
+        (out["base_dd"] >= dd_floor)
+        & (out["base_dd"] <= dd_cap)
+        & (out["loss_share_4w"] <= loss_cap)
+    )
+    resume_now = (
+        (out["base_ret_1w"] >= ret_high)
+        | (out["stop_release_2w"] >= release_high)
+        | (out["breadth_rebound_4w"] >= breadth_high)
+        | (out["scale_recovery_2w"] >= scale_high)
+        | (out["corr_release_4w"] >= corr_high)
+        | (out["qqq_rebound_2w"] >= qqq_high)
+    )
+    persist_future = (
+        (fwd3 >= fwd_high)
+        & (dd3 >= dd_future_floor)
+        & (pos3 >= pos_future_high)
+    )
+
+    out["continuation_y"] = (compression_now & pause_now & resume_now & persist_future).astype(int)
+    return out
+
+
 def _fit_time_model(
     train_weekly: pd.DataFrame,
     feature_cols: list[str],
@@ -230,6 +313,18 @@ def fit_recovery_model(train_weekly: pd.DataFrame, cfg: Mahoraga12Config, outer_
     )
 
 
+def fit_continuation_model(train_weekly: pd.DataFrame, cfg: Mahoraga12Config, outer_parallel: bool) -> Dict[str, Any]:
+    return _fit_time_model(
+        train_weekly,
+        CONTINUATION_FEATURES,
+        "continuation_y",
+        cfg,
+        outer_parallel,
+        "logit_continuation",
+        "rf_continuation",
+    )
+
+
 def apply_transition_model(model_info: Dict[str, Any], weekly_df: pd.DataFrame) -> pd.Series:
     if model_info.get("model") is None:
         return pd.Series(float(model_info.get("base_prob", 0.0)), index=weekly_df.index, name="transition_p")
@@ -242,3 +337,10 @@ def apply_recovery_model(model_info: Dict[str, Any], weekly_df: pd.DataFrame) ->
         return pd.Series(float(model_info.get("base_prob", 0.0)), index=weekly_df.index, name="recovery_p")
     p = model_info["model"].predict_proba(weekly_df[RECOVERY_FEATURES].fillna(0.0))[:, 1]
     return pd.Series(p, index=weekly_df.index, name="recovery_p")
+
+
+def apply_continuation_model(model_info: Dict[str, Any], weekly_df: pd.DataFrame) -> pd.Series:
+    if model_info.get("model") is None:
+        return pd.Series(float(model_info.get("base_prob", 0.0)), index=weekly_df.index, name="continuation_p")
+    p = model_info["model"].predict_proba(weekly_df[CONTINUATION_FEATURES].fillna(0.0))[:, 1]
+    return pd.Series(p, index=weekly_df.index, name="continuation_p")
