@@ -1,0 +1,23 @@
+MAHORAGA 12 — FAST REPORT
+==============================================================================
+
+STITCHED OOS COMPARISON
+  LEGACY     CAGR=17.45%  Sharpe=1.030  MaxDD=-66.44%
+  BASE_ALPHA CAGR=17.16%  Sharpe=1.001  MaxDD=-71.77%
+  M12        CAGR=17.16%  Sharpe=1.002  MaxDD=-71.77%
+  Base vs Legacy p-value=0.698781
+  M12  vs Base   p-value=0.513695
+  M12  vs Legacy p-value=0.699566
+  Fold-level BHY max q-value=1.000000
+
+FLOOR / CEILING SUMMARY
+  Floor folds (3, 5): mean M12 Sharpe=0.4919
+  Ceiling folds (1, 2, 4): mean M12 Sharpe=1.5922
+
+FOLD SUMMARY
+ fold                 train                  test  LEGACY_CAGR%  LEGACY_Sharpe  LEGACY_MaxDD%  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  M12_CAGR%  M12_Sharpe  M12_MaxDD% StructuralModel  TransitionModel  RecoveryModel  OverrideRate  StructuralRate  TransitionRate  RecoveryLiftRate  MeanGate  MeanDefenseBlend  Base_vs_Legacy_Val_pvalue  Base_vs_Legacy_Val_qvalue  Model_vs_Base_Val_pvalue  Model_vs_Base_Val_qvalue  Base_vs_Legacy_Test_pvalue  Model_vs_Base_Test_pvalue  Model_vs_Legacy_Test_pvalue  Base_vs_Legacy_Test_qvalue  Model_vs_Base_Test_qvalue  Model_vs_Legacy_Test_qvalue  SelectedCandidateId
+    1 2006-01-01→2013-12-31 2017-01-03→2018-12-31         12.85         0.8238         -13.43       14.22       0.9157       -13.30      13.82      0.8946      -13.30       rf_struct logit_transition    rf_recovery        0.1454          0.1454          0.0000            0.0000    0.9825            0.0436                   0.313982                   1.000000                  0.103190                       1.0                    0.309275                   0.948513                     0.365014                    0.993081                   1.000000                     0.993994                    0
+    2 2006-01-01→2015-12-31 2019-01-02→2020-12-31         25.23         1.2431         -20.24       27.59       1.3328       -20.45      26.47      1.2911      -20.45       rf_struct logit_transition    rf_recovery        0.2436          0.2040          0.0396            0.0198    0.9735            0.0628                   0.326460                   1.000000                  0.376382                       1.0                    0.084352                   0.966400                     0.228146                    0.963019                   1.000000                     0.993994                    0
+    3 2006-01-01→2017-12-29 2021-01-04→2022-12-30          8.96         0.5705         -18.57        9.40       0.5790       -18.34      10.21      0.6198      -17.48       rf_struct logit_transition logit_recovery        0.3082          0.2883          0.0199            0.0199    0.9664            0.1297                   0.175007                   1.000000                  0.270509                       1.0                    0.397636                   0.044797                     0.268897                    0.993081                   0.511432                     0.993994                    0
+    4 2006-01-01→2019-12-31 2023-01-03→2024-06-28         91.85         2.5321         -17.05       93.78       2.5477       -17.05      95.11      2.5908      -16.51    logit_struct logit_transition    rf_recovery        0.0749          0.0749          0.0000            0.0000    0.9910            0.0337                   0.124398                   0.839000                  0.581785                       1.0                    0.356134                   0.341041                     0.284997                    0.993081                   1.000000                     0.993994                    0
+    5 2006-01-01→2021-12-31 2024-07-01→2026-02-20          3.77         0.2873         -15.32        5.21       0.3641       -14.33       5.20      0.3640      -14.20    logit_struct logit_transition    rf_recovery        0.3041          0.2701          0.0341            0.0341    0.9693            0.1215                   0.094718                   0.580089                  0.312531                       1.0                    0.434926                   0.506626                     0.435326                    0.993081                   1.000000                     0.993994                    0

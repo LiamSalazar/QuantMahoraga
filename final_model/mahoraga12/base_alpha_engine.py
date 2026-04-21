@@ -116,6 +116,9 @@ def build_global_alpha_components(close: pd.DataFrame, qqq: pd.Series, cfg: Maho
         resid_mo[ticker] = _momentum(resid_px, cfg.residual_mom_windows)
 
     return {
+        "legacy_tr": raw_tr.fillna(0.0),
+        "legacy_mo": raw_mo.fillna(0.0),
+        "legacy_re": raw_re.fillna(0.0),
         "raw_tr": cross_sectional_z(raw_tr),
         "raw_mo": cross_sectional_z(raw_mo),
         "raw_re": cross_sectional_z(raw_re),
@@ -138,7 +141,7 @@ def build_engine_score(
     cfg: Mahoraga12Config,
 ) -> pd.DataFrame:
     legacy_core = cross_sectional_z(
-        cfg.w_trend * components["raw_tr"] + cfg.w_mom * components["raw_mo"] + cfg.w_rel * components["raw_re"]
+        cfg.w_trend * components["legacy_tr"] + cfg.w_mom * components["legacy_mo"] + cfg.w_rel * components["legacy_re"]
     )
 
     raw_w = np.array(alpha_fit["raw_weights"], dtype=float)

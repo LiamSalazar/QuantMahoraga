@@ -20,7 +20,7 @@ from mahoraga12_config import Mahoraga12Config
 from mahoraga12_universe import members_at_date, union_universe
 from mahoraga12_utils import bhy_qvalues, iter_grid, paired_ttest_pvalue, time_split_index
 from override_policy import build_override_weekly, iter_policy_candidates, weekly_to_daily_override
-from path_structure_features import build_candidate_daily_context, build_weekly_path_dataset
+from path_structure_features import build_candidate_daily_context, build_market_path_context, build_weekly_path_dataset
 from structural_defense_model import (
     annotate_structural_labels,
     apply_structural_defense_model,
@@ -391,13 +391,12 @@ def _stitch(results: List[Dict[str, Any]], key: str) -> Dict[str, pd.Series]:
 def _prepare_weekly_candidate_frame(
     base_bt: Dict[str, Any],
     base_cache: Dict[str, Any],
-    ohlcv: Dict[str, pd.DataFrame],
-    pre: Dict[str, Any],
+    market_ctx: pd.DataFrame,
     cfg: Mahoraga12Config,
     train_end: pd.Timestamp,
     hawkes_thresholds: Optional[Dict[str, float]] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
-    daily_ctx = build_candidate_daily_context(base_bt, base_cache, ohlcv, pre, cfg)
+    daily_ctx = build_candidate_daily_context(base_bt, base_cache, market_ctx)
     weekly = build_weekly_path_dataset(daily_ctx, cfg)
     hawkes, thresholds = build_hawkes_transition_features(weekly, cfg, thresholds=hawkes_thresholds)
     weekly = weekly.join(hawkes, how="left")
@@ -423,6 +422,8 @@ def _run_single_fold(
     cfg_fold = _prepare_fold_cfg(cfg_base, global_pre, train_start, train_end, universe_schedule)
     pre = _build_fold_pre(global_pre, cfg_fold, test_end)
     pre_cal = _build_fold_pre(global_pre, cfg_fold, train_end)
+    market_ctx_full = build_market_path_context(ohlcv, pre, cfg_fold)
+    market_ctx_cal = build_market_path_context(ohlcv, pre_cal, cfg_fold)
 
     alpha_fit = fit_base_alpha_model(pre["close"], pre["qqq"], cfg_fold, train_start, train_end)
 
@@ -470,7 +471,7 @@ def _run_single_fold(
         defense_cache_cal = engine_cache_cal[defense_key]
 
         base_bt_cal = _build_base_candidate_bt(pre_cal, base_cache_cal, cfg_fold, costs, label="BASE_ALPHA_VAL")
-        weekly_cal, _ = _prepare_weekly_candidate_frame(base_bt_cal, base_cache_cal, ohlcv, pre_cal, cfg_fold, train_end)
+        weekly_cal, _ = _prepare_weekly_candidate_frame(base_bt_cal, base_cache_cal, market_ctx_cal, cfg_fold, train_end)
         train_weekly = weekly_cal.loc[:train_end].copy()
 
         structural_fit = fit_structural_defense_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
@@ -500,6 +501,11 @@ def _run_single_fold(
                 label="M12_VAL",
             )
             metrics = _candidate_metrics(model_bt_cal, base_bt_cal, legacy_bt_cal, val_start, val_end, override_daily, fold_n, cfg_fold)
+            if fold_n in cfg_fold.ceiling_folds:
+                metrics["utility"] -= 0.12 * max(0.0, float(eng["base_mix"]) - 0.18) / 0.12
+                metrics["utility"] -= 0.03 * max(0.0, float(eng["raw_rel_boost"]) - 1.0)
+            else:
+                metrics["utility"] -= 0.04 * max(0.0, float(eng["base_mix"]) - 0.18) / 0.12
             leaderboard.append(
                 {
                     **eng,
@@ -554,13 +560,13 @@ def _run_single_fold(
     base_bt = _build_base_candidate_bt(pre, base_cache_full, cfg_fold, costs, label="BASE_ALPHA")
     base_bt_cal = _build_base_candidate_bt(pre_cal, base_cache_cal, cfg_fold, costs, label="BASE_ALPHA_CAL")
 
-    weekly_cal, hawkes_thresholds = _prepare_weekly_candidate_frame(base_bt_cal, base_cache_cal, ohlcv, pre_cal, cfg_fold, train_end)
+    weekly_cal, hawkes_thresholds = _prepare_weekly_candidate_frame(base_bt_cal, base_cache_cal, market_ctx_cal, cfg_fold, train_end)
     train_weekly = weekly_cal.loc[:train_end].copy()
     structural_fit = fit_structural_defense_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
     transition_fit = fit_transition_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
     recovery_fit = fit_recovery_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
 
-    weekly_full, _ = _prepare_weekly_candidate_frame(base_bt, base_cache_full, ohlcv, pre, cfg_fold, train_end, hawkes_thresholds=hawkes_thresholds)
+    weekly_full, _ = _prepare_weekly_candidate_frame(base_bt, base_cache_full, market_ctx_full, cfg_fold, train_end, hawkes_thresholds=hawkes_thresholds)
     weekly_full["structural_p"] = apply_structural_defense_model(structural_fit, weekly_full)
     weekly_full["transition_p"] = apply_transition_model(transition_fit, weekly_full)
     weekly_full["recovery_p"] = apply_recovery_model(recovery_fit, weekly_full)

@@ -52,9 +52,7 @@ def _drawdown_duration(eq: pd.Series) -> pd.Series:
     return duration.astype(float).reindex(eq.index).fillna(0.0)
 
 
-def build_candidate_daily_context(
-    base_bt: Dict[str, Any],
-    base_cache: Dict[str, Any],
+def build_market_path_context(
     ohlcv: Dict[str, pd.DataFrame],
     pre: Dict[str, Any],
     cfg: Mahoraga12Config,
@@ -70,7 +68,35 @@ def build_candidate_daily_context(
         else pd.Series(np.nan, index=idx)
     )
     rets = pre["rets"].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    breadth_63 = (rets.rolling(63).mean() > 0).mean(axis=1).fillna(0.0)
+    corr_rho = pre["corr_rho"].reindex(idx).fillna(0.0)
 
+    out = pd.DataFrame(index=idx)
+    out["avg_corr_21"] = _avg_pairwise_corr(rets, 21, idx)
+    out["avg_corr_63"] = _avg_pairwise_corr(rets, 63, idx)
+    out["corr_persist_21"] = (corr_rho >= 0.85).rolling(21).mean().fillna(0.0)
+    out["corr_release_21"] = (-corr_rho.diff(10)).fillna(0.0)
+    out["breadth_63"] = breadth_63
+    out["breadth_change_21"] = breadth_63.diff(21).fillna(0.0)
+    out["xs_disp_21"] = rets.rolling(21).std(ddof=1).mean(axis=1).fillna(0.0)
+    out["qqq_ret_2w"] = qqq.pct_change(10).fillna(0.0)
+    out["qqq_drawdown"] = qqq_dd.fillna(0.0)
+    out["qqq_rebound_10d"] = _rebound_from_trough(qqq_eq, 10)
+    out["qqq_eff_10d"] = _rolling_efficiency(qqq_r, 10)
+    out["qqq_vol_21"] = (qqq_r.rolling(21).std(ddof=1) * np.sqrt(cfg.trading_days)).fillna(0.0)
+    out["vix_z_63"] = ((vix - vix.rolling(63).mean()) / vix.rolling(63).std(ddof=1).replace(0.0, np.nan)).fillna(0.0)
+    out["crisis_scale"] = pre.get("crisis_scale", pd.Series(1.0, index=idx)).reindex(idx).fillna(1.0)
+    out["turb_scale"] = pre.get("turb_scale", pd.Series(1.0, index=idx)).reindex(idx).fillna(1.0)
+    out["corr_rho"] = corr_rho
+    return out
+
+
+def build_candidate_daily_context(
+    base_bt: Dict[str, Any],
+    base_cache: Dict[str, Any],
+    market_ctx: pd.DataFrame,
+) -> pd.DataFrame:
+    idx = market_ctx.index
     base_r = base_bt["returns_net"].reindex(idx).fillna(0.0)
     base_eq = (1.0 + base_r).cumprod()
     base_dd = base_eq / base_eq.cummax() - 1.0
@@ -81,10 +107,7 @@ def build_candidate_daily_context(
     turnover_1x = base_cache.get("turnover_1x", pd.Series(0.0, index=idx)).reindex(idx).fillna(0.0)
     total_scale = base_bt.get("total_scale_target", pd.Series(1.0, index=idx)).reindex(idx).fillna(1.0)
 
-    breadth_63 = (rets.rolling(63).mean() > 0).mean(axis=1).fillna(0.0)
-    corr_rho = pre["corr_rho"].reindex(idx).fillna(0.0)
-
-    out = pd.DataFrame(index=idx)
+    out = market_ctx.copy()
     out["base_r"] = base_r
     out["base_ret_5d"] = base_eq.pct_change(5).fillna(0.0)
     out["base_ret_10d"] = base_eq.pct_change(10).fillna(0.0)
@@ -110,23 +133,6 @@ def build_candidate_daily_context(
     out["base_turnover"] = base_bt.get("turnover", pd.Series(0.0, index=idx)).reindex(idx).fillna(0.0)
     out["base_scale_gap"] = (1.0 - total_scale).clip(0.0, 1.0)
     out["scale_recovery_10d"] = total_scale.diff(10).fillna(0.0)
-
-    out["avg_corr_21"] = _avg_pairwise_corr(rets, 21, idx)
-    out["avg_corr_63"] = _avg_pairwise_corr(rets, 63, idx)
-    out["corr_persist_21"] = (corr_rho >= 0.85).rolling(21).mean().fillna(0.0)
-    out["corr_release_21"] = (-corr_rho.diff(10)).fillna(0.0)
-    out["breadth_63"] = breadth_63
-    out["breadth_change_21"] = breadth_63.diff(21).fillna(0.0)
-    out["xs_disp_21"] = rets.rolling(21).std(ddof=1).mean(axis=1).fillna(0.0)
-    out["qqq_ret_2w"] = qqq.pct_change(10).fillna(0.0)
-    out["qqq_drawdown"] = qqq_dd.fillna(0.0)
-    out["qqq_rebound_10d"] = _rebound_from_trough(qqq_eq, 10)
-    out["qqq_eff_10d"] = _rolling_efficiency(qqq_r, 10)
-    out["qqq_vol_21"] = (qqq_r.rolling(21).std(ddof=1) * np.sqrt(cfg.trading_days)).fillna(0.0)
-    out["vix_z_63"] = ((vix - vix.rolling(63).mean()) / vix.rolling(63).std(ddof=1).replace(0.0, np.nan)).fillna(0.0)
-    out["crisis_scale"] = base_bt.get("crisis_scale", pd.Series(1.0, index=idx)).reindex(idx).fillna(1.0)
-    out["turb_scale"] = base_bt.get("turb_scale", pd.Series(1.0, index=idx)).reindex(idx).fillna(1.0)
-    out["corr_rho"] = corr_rho
     return out
 
 

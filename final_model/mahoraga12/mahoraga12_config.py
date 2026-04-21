@@ -78,7 +78,7 @@ class Mahoraga12Config(m6.Mahoraga6Config):
     def engine_grid(self) -> Dict[str, Tuple[float, ...]]:
         if self.run_mode.upper() == "FAST":
             return {
-                "base_mix": (0.18, 0.28, 0.36),
+                "base_mix": (0.18, 0.30),
                 "defense_mix": (0.45, 0.60),
                 "base_beta_penalty": (0.00,),
                 "defense_beta_penalty": (0.05,),
@@ -101,11 +101,11 @@ class Mahoraga12Config(m6.Mahoraga6Config):
                 "hawkes_weight": (0.10, 0.18),
                 "structural_blend": (0.30, 0.45),
                 "transition_blend": (0.08,),
-                "structural_gate": (0.84, 0.90),
+                "structural_gate": (0.88,),
                 "transition_gate": (0.90,),
                 "recovery_gate": (1.00, 1.05),
                 "transition_vol_mult": (0.92,),
-                "recovery_vol_mult": (1.03, 1.08),
+                "recovery_vol_mult": (1.06,),
                 "structural_exp_cap": (0.80,),
                 "transition_exp_cap": (0.90,),
                 "recovery_exp_cap": (1.06,),
