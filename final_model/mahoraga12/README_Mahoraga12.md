@@ -1,6 +1,6 @@
-# Mahoraga 11
+# Mahoraga 12
 
-Mahoraga 11 is a **baseline-first, path-structure-aware** redesign of the line.
+Mahoraga 12 is a **baseline-first, path-structure-aware** redesign of the line.
 
 ## Design
 
@@ -31,9 +31,9 @@ The package now has a strict hierarchy:
 
 ## Files
 
-- `mahoraga11_config.py`: configuration and compact/wide grids.
-- `mahoraga11_data.py`: OHLCV and PIT universe loading.
-- `mahoraga11_universe.py`: universe helpers.
+- `mahoraga12_config.py`: configuration and compact/wide grids.
+- `mahoraga12_data.py`: OHLCV and PIT universe loading.
+- `mahoraga12_universe.py`: universe helpers.
 - `base_alpha_engine.py`: improved alpha baseline and cached engine paths.
 - `path_structure_features.py`: daily/weekly path descriptors.
 - `structural_defense_model.py`: structural override model.
@@ -42,14 +42,14 @@ The package now has a strict hierarchy:
 - `backtest_executor.py`: walk-forward execution, calibration and stitching.
 - `fast_report.py`: compact FAST artifacts.
 - `full_report.py`: audit-heavy FULL artifacts.
-- `mahoraga11_backtest.py`: compatibility wrapper to the executor.
-- `mahoraga11_reporting.py`: compatibility wrapper to FAST/FULL reporting.
-- `mahoraga11_runner.py`: entrypoint.
+- `mahoraga12_backtest.py`: compatibility wrapper to the executor.
+- `mahoraga12_reporting.py`: compatibility wrapper to FAST/FULL reporting.
+- `mahoraga12_runner.py`: entrypoint.
 
 ## Run
 
 ```bash
-python mahoraga11_runner.py
+python mahoraga12_runner.py
 ```
 
 ## Notes

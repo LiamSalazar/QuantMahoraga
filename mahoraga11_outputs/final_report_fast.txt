@@ -1,0 +1,23 @@
+MAHORAGA 11 — FAST REPORT
+==============================================================================
+
+STITCHED OOS COMPARISON
+  LEGACY    CAGR=18.85%  Sharpe=1.058  MaxDD=-69.67%
+  BASE_ALPHA CAGR=18.11%  Sharpe=1.017  MaxDD=-69.88%
+  M11       CAGR=18.12%  Sharpe=1.018  MaxDD=-69.88%
+  Base vs Legacy p-value=0.916772
+  M11  vs Base   p-value=0.249637
+  M11  vs Legacy p-value=0.914132
+  Fold-level BHY max q-value=1.000000
+
+FLOOR / CEILING SUMMARY
+  Floor folds (3, 5): mean M11 Sharpe=0.4685
+  Ceiling folds (1, 2, 4): mean M11 Sharpe=1.5627
+
+FOLD SUMMARY
+ fold                 train                  test  LEGACY_CAGR%  LEGACY_Sharpe  LEGACY_MaxDD%  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  M11_CAGR%  M11_Sharpe  M11_MaxDD% StructuralModel  TransitionModel  RecoveryModel  OverrideRate  StructuralRate  TransitionRate  RecoveryLiftRate  MeanGate  MeanDefenseBlend  Base_vs_Legacy_Val_pvalue  Base_vs_Legacy_Val_qvalue  Model_vs_Base_Val_pvalue  Model_vs_Base_Val_qvalue  Base_vs_Legacy_Test_pvalue  Model_vs_Base_Test_pvalue  Model_vs_Legacy_Test_pvalue  Base_vs_Legacy_Test_qvalue  Model_vs_Base_Test_qvalue  Model_vs_Legacy_Test_qvalue
+    1 2006-01-01→2013-12-31 2017-01-03→2018-12-31         12.85         0.8238         -13.43       14.24       0.9127       -13.30      14.05      0.9027      -13.30       rf_struct    rf_transition    rf_recovery        0.1275          0.1275          0.0000            0.0000    0.9771            0.0446                   0.684951                   1.000000                  0.268635                       1.0                    0.272160                   0.895134                     0.301290                    1.000000                   1.000000                          1.0
+    2 2006-01-01→2015-12-31 2019-01-02→2020-12-31         25.23         1.2431         -20.24       27.41       1.3216       -20.24      26.88      1.3027      -20.23       rf_struct    rf_transition    rf_recovery        0.2574          0.2000          0.0574            0.0574    0.9800            0.0700                   0.495156                   1.000000                  0.248960                       1.0                    0.063481                   0.880785                     0.113766                    0.724741                   1.000000                          1.0
+    3 2006-01-01→2017-12-29 2021-01-04→2022-12-30          8.96         0.5705         -18.57        9.40       0.5790       -18.34      10.07      0.6129      -17.34       rf_struct logit_transition    rf_recovery        0.2684          0.2584          0.0099            0.0099    0.9742            0.1292                   0.172836                   1.000000                  0.582145                       1.0                    0.397634                   0.033406                     0.287920                    1.000000                   0.190693                          1.0
+    4 2006-01-01→2019-12-31 2023-01-03→2024-06-28         91.85         2.5320         -17.05       89.31       2.4784       -17.05      89.88      2.4828      -17.05    logit_struct logit_transition logit_recovery        0.1417          0.0000          0.1417            0.1417    1.0000            0.0000                   0.151017                   0.924878                  0.658292                       1.0                    0.680978                   0.033252                     0.639179                    1.000000                   0.190693                          1.0
+    5 2006-01-01→2021-12-31 2024-07-01→2026-02-20          3.77         0.2873         -15.32        4.25       0.3155       -14.33       4.41      0.3241      -14.23    logit_struct logit_transition    rf_recovery        0.3212          0.2603          0.0608            0.0608    0.9740            0.0911                   0.084299                   0.711885                  0.314489                       1.0                    0.483046                   0.270524                     0.474756                    1.000000                   1.000000                          1.0

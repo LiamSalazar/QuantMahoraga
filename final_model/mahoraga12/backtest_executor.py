@@ -1,0 +1,706 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+from joblib import Parallel, delayed
+
+import mahoraga6_1 as m6
+from base_alpha_engine import (
+    backtest_from_1x_weights,
+    blend_engine_paths,
+    build_global_alpha_components,
+    fit_base_alpha_model,
+    precompute_engine_path,
+    slice_alpha_components,
+)
+from mahoraga12_config import Mahoraga12Config
+from mahoraga12_universe import members_at_date, union_universe
+from mahoraga12_utils import bhy_qvalues, iter_grid, paired_ttest_pvalue, time_split_index
+from override_policy import build_override_weekly, iter_policy_candidates, weekly_to_daily_override
+from path_structure_features import build_candidate_daily_context, build_weekly_path_dataset
+from structural_defense_model import (
+    annotate_structural_labels,
+    apply_structural_defense_model,
+    fit_structural_defense_model,
+)
+from transition_recovery_model import (
+    annotate_transition_recovery_labels,
+    apply_recovery_model,
+    apply_transition_model,
+    build_hawkes_transition_features,
+    fit_recovery_model,
+    fit_transition_model,
+)
+
+
+def _load_folds(cfg: Mahoraga12Config, ohlcv: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+    folds = pd.DataFrame(m6.build_contiguous_folds(cfg, pd.DatetimeIndex(ohlcv["close"].index)))
+    return folds[folds["fold"].isin(cfg.mode_folds())].copy().sort_values("fold")
+
+
+def _prepare_global_invariants(
+    ohlcv: Dict[str, pd.DataFrame],
+    cfg: Mahoraga12Config,
+    universe_schedule: Optional[pd.DataFrame],
+) -> Dict[str, Any]:
+    universe_master = union_universe(ohlcv, universe_schedule, list(cfg.universe_static))
+    close = ohlcv["close"][universe_master].copy()
+    high = ohlcv["high"][universe_master].copy()
+    low = ohlcv["low"][universe_master].copy()
+    rets = close.pct_change().fillna(0.0)
+    idx = close.index
+    qqq = m6.to_s(ohlcv["close"][cfg.bench_qqq].reindex(idx).ffill(), "QQQ")
+    spy = m6.to_s(ohlcv["close"][cfg.bench_spy].reindex(idx).ffill(), "SPY")
+    vix_series = None
+    if cfg.bench_vix in ohlcv.get("close", pd.DataFrame()).columns:
+        vix_series = m6.to_s(ohlcv["close"][cfg.bench_vix].reindex(idx).ffill(), "VIX")
+
+    turb_scale = m6.compute_turbulence(close, ohlcv["volume"][universe_master], qqq, cfg)
+    corr_rho, corr_scale_legacy, corr_state = m6.compute_corr_shield_series(
+        rets,
+        idx,
+        cfg,
+        universe_master,
+        use_pit_universe=universe_schedule is not None and len(universe_schedule) > 0,
+        universe_schedule=universe_schedule,
+        vix=vix_series,
+    )
+    reb_dates = set(close.resample(cfg.rebalance_freq).last().index)
+    components = build_global_alpha_components(close, qqq, cfg)
+    return {
+        "close": close,
+        "high": high,
+        "low": low,
+        "rets": rets,
+        "idx": idx,
+        "qqq": qqq,
+        "spy": spy,
+        "turb_scale": turb_scale,
+        "corr_rho": corr_rho,
+        "corr_scale_legacy": corr_scale_legacy,
+        "corr_state": corr_state,
+        "reb_dates": reb_dates,
+        "members_at": lambda dt: members_at_date(universe_schedule, dt, universe_master),
+        "components": components,
+        "universe_master": universe_master,
+    }
+
+
+def _prepare_fold_cfg(
+    cfg_base: Mahoraga12Config,
+    global_pre: Dict[str, Any],
+    train_start: pd.Timestamp,
+    train_end: pd.Timestamp,
+    universe_schedule: Optional[pd.DataFrame],
+) -> Mahoraga12Config:
+    cfg = deepcopy(cfg_base)
+    dd_thr, vol_thr = m6.calibrate_crisis_thresholds(global_pre["qqq"], str(train_start.date()), str(train_end.date()), cfg)
+    cfg.crisis_dd_thr = dd_thr
+    cfg.crisis_vol_zscore_thr = vol_thr
+    train_tickers = m6.get_training_universe(
+        str(train_end.date()),
+        universe_schedule,
+        cfg.universe_static,
+        list(global_pre["close"].columns),
+    )
+    close_univ = global_pre["close"][train_tickers]
+    wt, wm, wr = m6.fit_ic_weights(close_univ, global_pre["qqq"].loc[train_start:train_end], cfg, str(train_start.date()), str(train_end.date()))
+    cfg.w_trend, cfg.w_mom, cfg.w_rel = wt, wm, wr
+    return cfg
+
+
+def _build_fold_pre(
+    global_pre: Dict[str, Any],
+    cfg: Mahoraga12Config,
+    end: pd.Timestamp,
+) -> Dict[str, Any]:
+    idx = global_pre["idx"][global_pre["idx"] <= end]
+    qqq_slice = global_pre["qqq"].loc[idx]
+    crisis_scale, crisis_state = m6.compute_crisis_gate(qqq_slice, cfg)
+    return {
+        "close": global_pre["close"].loc[idx],
+        "high": global_pre["high"].loc[idx],
+        "low": global_pre["low"].loc[idx],
+        "rets": global_pre["rets"].loc[idx],
+        "idx": idx,
+        "qqq": qqq_slice,
+        "spy": global_pre["spy"].loc[idx],
+        "crisis_scale": crisis_scale.loc[idx],
+        "crisis_state": crisis_state.loc[idx],
+        "turb_scale": global_pre["turb_scale"].loc[idx],
+        "corr_rho": global_pre["corr_rho"].loc[idx],
+        "corr_scale_legacy": global_pre["corr_scale_legacy"].loc[idx],
+        "corr_state": global_pre["corr_state"].loc[idx],
+        "reb_dates": {dt for dt in global_pre["reb_dates"] if dt <= end},
+        "members_at": global_pre["members_at"],
+        "components": slice_alpha_components(global_pre["components"], idx),
+    }
+
+
+def _build_legacy_baseline_bt(pre: Dict[str, Any], cfg: Mahoraga12Config, costs: m6.CostsConfig) -> Dict[str, Any]:
+    score = m6.compute_scores(pre["close"], pre["qqq"], cfg)
+    close = pre["close"]
+    high = pre["high"]
+    low = pre["low"]
+    rets = pre["rets"]
+    idx = pre["idx"]
+
+    weights = pd.DataFrame(0.0, index=idx, columns=close.columns)
+    last_w = pd.Series(0.0, index=close.columns)
+    for dt in idx:
+        if dt in pre["reb_dates"]:
+            members = [m for m in pre["members_at"](dt) if m in close.columns]
+            if members:
+                row = score.loc[dt, members]
+                chosen = [name for name in row.nlargest(cfg.top_k).index.tolist() if row.get(name, 0.0) > 0.0]
+                if len(chosen) == 1:
+                    last_w = pd.Series(0.0, index=close.columns)
+                    last_w[chosen[0]] = 1.0
+                elif len(chosen) >= 2:
+                    hist = rets.loc[:dt, chosen].tail(cfg.hrp_window).dropna(how="any")
+                    if len(hist) < 60:
+                        hist = rets.loc[:dt, chosen].dropna(how="any")
+                    if len(hist):
+                        w_hrp = m6.hrp_weights(hist).reindex(chosen, fill_value=0.0)
+                    else:
+                        w_hrp = pd.Series(1.0 / len(chosen), index=chosen)
+                    w_hrp = w_hrp.clip(upper=cfg.weight_cap)
+                    w_hrp = w_hrp / w_hrp.sum() if w_hrp.sum() > 0 else pd.Series(1.0 / len(chosen), index=chosen)
+                    last_w = pd.Series(0.0, index=close.columns)
+                    last_w[chosen] = w_hrp.reindex(chosen).values
+                else:
+                    last_w = pd.Series(0.0, index=close.columns)
+            else:
+                last_w = pd.Series(0.0, index=close.columns)
+        weights.loc[dt] = last_w.values
+
+    weights_after_stops, _ = m6.apply_chandelier(weights, close, high, low, cfg)
+    weights_exec_1x = weights_after_stops.shift(1).fillna(0.0)
+    ones = pd.Series(1.0, index=idx)
+    bt = backtest_from_1x_weights(pre, weights_exec_1x, ones, ones, ones, cfg, costs, label="LEGACY_BASELINE")
+    bt["scores"] = score
+    return bt
+
+
+def _build_base_candidate_bt(
+    pre: Dict[str, Any],
+    engine_cache: Dict[str, Any],
+    cfg: Mahoraga12Config,
+    costs: m6.CostsConfig,
+    label: str,
+) -> Dict[str, Any]:
+    ones = pd.Series(1.0, index=pre["idx"])
+    bt = backtest_from_1x_weights(pre, engine_cache["weights_exec_1x"], ones, ones, ones, cfg, costs, label=label)
+    bt["scores"] = engine_cache["scores"]
+    bt["stop_active_share"] = engine_cache["stop_active_share"]
+    bt["new_stop_share"] = engine_cache["new_stop_share"]
+    return bt
+
+
+def _summarize_window(bt: Dict[str, Any], start: pd.Timestamp, end: pd.Timestamp, cfg: Mahoraga12Config, label: str) -> Dict[str, float]:
+    ret = bt["returns_net"].loc[start:end]
+    eq = cfg.capital_initial * (1.0 + ret).cumprod()
+    exp = bt["exposure"].loc[start:end]
+    turnover = bt["turnover"].loc[start:end]
+    return m6.summarize(ret, eq, exp, turnover, cfg, label)
+
+
+def _candidate_metrics(
+    model_bt: Dict[str, Any],
+    base_bt: Dict[str, Any],
+    legacy_bt: Dict[str, Any],
+    val_start: pd.Timestamp,
+    val_end: pd.Timestamp,
+    override_daily: pd.DataFrame,
+    fold_n: int,
+    cfg: Mahoraga12Config,
+) -> Dict[str, float]:
+    s_legacy = _summarize_window(legacy_bt, val_start, val_end, cfg, "VAL_LEGACY")
+    s_base = _summarize_window(base_bt, val_start, val_end, cfg, "VAL_BASE")
+    s_model = _summarize_window(model_bt, val_start, val_end, cfg, "VAL_MODEL")
+
+    base_r = base_bt["returns_net"].loc[val_start:val_end]
+    legacy_r = legacy_bt["returns_net"].loc[val_start:val_end]
+    model_r = model_bt["returns_net"].loc[val_start:val_end]
+
+    base_vs_legacy_sharpe = s_base["Sharpe"] - s_legacy["Sharpe"]
+    base_vs_legacy_cagr = s_base["CAGR"] - s_legacy["CAGR"]
+    base_vs_legacy_dd = abs(s_legacy["MaxDD"]) - abs(s_base["MaxDD"])
+
+    model_vs_base_sharpe = s_model["Sharpe"] - s_base["Sharpe"]
+    model_vs_base_cagr = s_model["CAGR"] - s_base["CAGR"]
+    model_vs_base_dd = abs(s_base["MaxDD"]) - abs(s_model["MaxDD"])
+
+    override_rate = float(override_daily["is_override"].loc[model_r.index].mean())
+    structural_rate = float(override_daily["is_structural_override"].loc[model_r.index].mean())
+    transition_rate = float(override_daily["is_transition_override"].loc[model_r.index].mean())
+    recovery_rate = float(override_daily["is_recovery_lift"].loc[model_r.index].mean())
+    mean_defense_blend = float(override_daily["defense_blend"].loc[model_r.index].mean())
+    mean_gate = float(override_daily["gate_scale"].loc[model_r.index].mean())
+
+    if fold_n in cfg.ceiling_folds:
+        utility = (
+            1.80 * base_vs_legacy_sharpe
+            + 0.40 * base_vs_legacy_cagr
+            + 0.28 * base_vs_legacy_dd
+            + 0.30 * model_vs_base_sharpe
+            + 0.08 * model_vs_base_cagr
+            + 0.10 * model_vs_base_dd
+            - 4.00 * max(0.0, -base_vs_legacy_sharpe - 0.01)
+            - 6.00 * max(0.0, -model_vs_base_sharpe)
+            - 1.20 * max(0.0, override_rate - cfg.ceiling_override_rate_cap)
+            - 0.60 * max(0.0, structural_rate - 0.14)
+            - 0.20 * recovery_rate
+            - 0.20 * mean_defense_blend
+        )
+    else:
+        utility = (
+            0.70 * base_vs_legacy_sharpe
+            + 0.25 * base_vs_legacy_cagr
+            + 0.20 * base_vs_legacy_dd
+            + 1.95 * model_vs_base_sharpe
+            + 0.55 * model_vs_base_cagr
+            + 0.35 * model_vs_base_dd
+            + 0.18 * min(recovery_rate, 0.22)
+            - 1.50 * max(0.0, -model_vs_base_sharpe - 0.01)
+            - 0.45 * max(0.0, override_rate - cfg.floor_override_rate_cap)
+            - 0.30 * max(0.0, structural_rate - 0.28)
+        )
+
+    return {
+        "utility": float(utility),
+        "val_legacy_sharpe": float(s_legacy["Sharpe"]),
+        "val_base_sharpe": float(s_base["Sharpe"]),
+        "val_model_sharpe": float(s_model["Sharpe"]),
+        "val_base_vs_legacy_sharpe": float(base_vs_legacy_sharpe),
+        "val_model_vs_base_sharpe": float(model_vs_base_sharpe),
+        "val_model_vs_legacy_sharpe": float(s_model["Sharpe"] - s_legacy["Sharpe"]),
+        "val_base_cagr": float(s_base["CAGR"]),
+        "val_model_cagr": float(s_model["CAGR"]),
+        "val_base_vs_legacy_cagr": float(base_vs_legacy_cagr),
+        "val_model_vs_base_cagr": float(model_vs_base_cagr),
+        "val_base_vs_legacy_maxdd_improve": float(base_vs_legacy_dd),
+        "val_model_vs_base_maxdd_improve": float(model_vs_base_dd),
+        "base_vs_legacy_val_pvalue": float(paired_ttest_pvalue(base_r - legacy_r, alternative="greater")),
+        "model_vs_base_val_pvalue": float(paired_ttest_pvalue(model_r - base_r, alternative="greater")),
+        "model_vs_legacy_val_pvalue": float(paired_ttest_pvalue(model_r - legacy_r, alternative="greater")),
+        "override_rate": override_rate,
+        "structural_rate": structural_rate,
+        "transition_rate": transition_rate,
+        "recovery_rate": recovery_rate,
+        "mean_defense_blend": mean_defense_blend,
+        "mean_gate": mean_gate,
+    }
+
+
+def _select_candidate(calib_df: pd.DataFrame, fold_n: int, cfg: Mahoraga12Config) -> Dict[str, Any]:
+    if len(calib_df) == 0:
+        return {}
+
+    if fold_n in cfg.ceiling_folds:
+        admissible = calib_df[
+            (calib_df["val_base_vs_legacy_sharpe"] >= cfg.ceiling_base_sharpe_tol)
+            & (calib_df["val_model_vs_base_sharpe"] >= cfg.ceiling_model_sharpe_tol)
+            & (calib_df["override_rate"] <= cfg.ceiling_override_rate_cap)
+        ]
+        if len(admissible):
+            return admissible.iloc[0].to_dict()
+        admissible = calib_df[
+            (calib_df["val_model_vs_base_sharpe"] >= -0.01)
+            & (calib_df["override_rate"] <= cfg.ceiling_override_rate_cap * 1.15)
+        ]
+        if len(admissible):
+            return admissible.iloc[0].to_dict()
+    else:
+        admissible = calib_df[
+            (calib_df["val_model_vs_base_sharpe"] >= cfg.floor_model_sharpe_floor)
+            & (calib_df["override_rate"] <= cfg.floor_override_rate_cap)
+        ]
+        if len(admissible):
+            return admissible.iloc[0].to_dict()
+        admissible = calib_df[calib_df["val_model_vs_base_sharpe"] >= -0.01]
+        if len(admissible):
+            return admissible.iloc[0].to_dict()
+
+    return calib_df.iloc[0].to_dict()
+
+
+def _candidate_support(calib_df: pd.DataFrame, selected_id: float, cfg: Mahoraga12Config) -> pd.DataFrame:
+    if len(calib_df) == 0:
+        return pd.DataFrame()
+
+    support = calib_df.head(cfg.top_support_candidates).copy()
+    if selected_id not in set(support["candidate_id"].tolist()):
+        extra = calib_df.loc[calib_df["candidate_id"] == selected_id]
+        support = pd.concat([support, extra], axis=0, ignore_index=True)
+    support = support.drop_duplicates(subset=["candidate_id"]).copy()
+    support["support_rank"] = np.arange(1, len(support) + 1)
+    support["is_selected"] = (support["candidate_id"] == selected_id).astype(int)
+    keep = [
+        "candidate_id",
+        "support_rank",
+        "is_selected",
+        "utility",
+        "val_base_vs_legacy_sharpe",
+        "val_model_vs_base_sharpe",
+        "override_rate",
+        "structural_rate",
+        "transition_rate",
+        "recovery_rate",
+        "base_vs_legacy_val_pvalue",
+        "base_vs_legacy_val_qvalue",
+        "model_vs_base_val_pvalue",
+        "model_vs_base_val_qvalue",
+        "base_mix",
+        "defense_mix",
+        "base_beta_penalty",
+        "defense_beta_penalty",
+        "raw_rel_boost",
+        "structural_enter_thr",
+        "transition_enter_thr",
+        "recovery_enter_thr",
+        "hawkes_weight",
+        "structural_blend",
+        "transition_blend",
+        "structural_gate",
+        "transition_gate",
+        "recovery_gate",
+        "transition_vol_mult",
+        "recovery_vol_mult",
+        "structural_exp_cap",
+        "transition_exp_cap",
+        "recovery_exp_cap",
+        "StructuralModel",
+        "TransitionModel",
+        "RecoveryModel",
+    ]
+    return support[[c for c in keep if c in support.columns]]
+
+
+def _stitch(results: List[Dict[str, Any]], key: str) -> Dict[str, pd.Series]:
+    bt_list = [r[key] for r in results]
+    ret = pd.concat([b["returns_net"] for b in bt_list]).sort_index()
+    exp = pd.concat([b["exposure"] for b in bt_list]).sort_index().reindex(ret.index).fillna(0.0)
+    turnover = pd.concat([b["turnover"] for b in bt_list]).sort_index().reindex(ret.index).fillna(0.0)
+    return {"returns": ret, "exposure": exp, "turnover": turnover}
+
+
+def _prepare_weekly_candidate_frame(
+    base_bt: Dict[str, Any],
+    base_cache: Dict[str, Any],
+    ohlcv: Dict[str, pd.DataFrame],
+    pre: Dict[str, Any],
+    cfg: Mahoraga12Config,
+    train_end: pd.Timestamp,
+    hawkes_thresholds: Optional[Dict[str, float]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    daily_ctx = build_candidate_daily_context(base_bt, base_cache, ohlcv, pre, cfg)
+    weekly = build_weekly_path_dataset(daily_ctx, cfg)
+    hawkes, thresholds = build_hawkes_transition_features(weekly, cfg, thresholds=hawkes_thresholds)
+    weekly = weekly.join(hawkes, how="left")
+    weekly = annotate_structural_labels(weekly, train_end)
+    weekly = annotate_transition_recovery_labels(weekly, train_end)
+    return weekly, thresholds
+
+
+def _run_single_fold(
+    row: pd.Series,
+    ohlcv: Dict[str, pd.DataFrame],
+    global_pre: Dict[str, Any],
+    cfg_base: Mahoraga12Config,
+    costs: m6.CostsConfig,
+    universe_schedule: Optional[pd.DataFrame],
+) -> Dict[str, Any]:
+    fold_n = int(row["fold"])
+    train_start = pd.Timestamp(row["train_start"])
+    train_end = pd.Timestamp(row["train_end"])
+    test_start = pd.Timestamp(row["test_start"])
+    test_end = pd.Timestamp(row["test_end"])
+
+    cfg_fold = _prepare_fold_cfg(cfg_base, global_pre, train_start, train_end, universe_schedule)
+    pre = _build_fold_pre(global_pre, cfg_fold, test_end)
+    pre_cal = _build_fold_pre(global_pre, cfg_fold, train_end)
+
+    alpha_fit = fit_base_alpha_model(pre["close"], pre["qqq"], cfg_fold, train_start, train_end)
+
+    legacy_bt = _build_legacy_baseline_bt(pre, cfg_fold, costs)
+    legacy_bt_cal = _build_legacy_baseline_bt(pre_cal, cfg_fold, costs)
+
+    engine_candidates = list(iter_grid(cfg_fold.engine_grid()))
+    engine_cache_full: Dict[Tuple[float, float, float], Dict[str, Any]] = {}
+    engine_cache_cal: Dict[Tuple[float, float, float], Dict[str, Any]] = {}
+
+    for eng in engine_candidates:
+        for mix, beta_pen in [
+            (eng["base_mix"], eng["base_beta_penalty"]),
+            (eng["defense_mix"], eng["defense_beta_penalty"]),
+        ]:
+            key = (round(mix, 6), round(beta_pen, 6), round(eng["raw_rel_boost"], 6))
+            if key not in engine_cache_full:
+                engine_cache_full[key] = precompute_engine_path(
+                    pre,
+                    pre["components"],
+                    alpha_fit,
+                    mix,
+                    beta_pen,
+                    eng["raw_rel_boost"],
+                    cfg_fold,
+                )
+            if key not in engine_cache_cal:
+                engine_cache_cal[key] = precompute_engine_path(
+                    pre_cal,
+                    pre_cal["components"],
+                    alpha_fit,
+                    mix,
+                    beta_pen,
+                    eng["raw_rel_boost"],
+                    cfg_fold,
+                )
+
+    policy_candidates = list(iter_policy_candidates(cfg_fold))
+    leaderboard: List[Dict[str, Any]] = []
+
+    for eng in engine_candidates:
+        base_key = (round(eng["base_mix"], 6), round(eng["base_beta_penalty"], 6), round(eng["raw_rel_boost"], 6))
+        defense_key = (round(eng["defense_mix"], 6), round(eng["defense_beta_penalty"], 6), round(eng["raw_rel_boost"], 6))
+        base_cache_cal = engine_cache_cal[base_key]
+        defense_cache_cal = engine_cache_cal[defense_key]
+
+        base_bt_cal = _build_base_candidate_bt(pre_cal, base_cache_cal, cfg_fold, costs, label="BASE_ALPHA_VAL")
+        weekly_cal, _ = _prepare_weekly_candidate_frame(base_bt_cal, base_cache_cal, ohlcv, pre_cal, cfg_fold, train_end)
+        train_weekly = weekly_cal.loc[:train_end].copy()
+
+        structural_fit = fit_structural_defense_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
+        transition_fit = fit_transition_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
+        recovery_fit = fit_recovery_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
+
+        weekly_cal["structural_p"] = apply_structural_defense_model(structural_fit, weekly_cal)
+        weekly_cal["transition_p"] = apply_transition_model(transition_fit, weekly_cal)
+        weekly_cal["recovery_p"] = apply_recovery_model(recovery_fit, weekly_cal)
+
+        cut = time_split_index(train_weekly.index, cfg_fold.inner_val_frac, cfg_fold.min_train_weeks)
+        val_start = train_weekly.index[cut]
+        val_end = train_end
+
+        for policy_params in policy_candidates:
+            override_weekly = build_override_weekly(weekly_cal.loc[:train_end], policy_params, cfg_fold)
+            override_daily = weekly_to_daily_override(override_weekly, pre_cal["idx"], cfg_fold)
+            weights_exec_1x = blend_engine_paths(base_cache_cal, defense_cache_cal, override_daily["defense_blend"])
+            model_bt_cal = backtest_from_1x_weights(
+                pre_cal,
+                weights_exec_1x,
+                override_daily["gate_scale"],
+                override_daily["vol_mult"],
+                override_daily["exp_cap"],
+                cfg_fold,
+                costs,
+                label="M12_VAL",
+            )
+            metrics = _candidate_metrics(model_bt_cal, base_bt_cal, legacy_bt_cal, val_start, val_end, override_daily, fold_n, cfg_fold)
+            leaderboard.append(
+                {
+                    **eng,
+                    **policy_params,
+                    **metrics,
+                    "fold": fold_n,
+                    "StructuralModel": structural_fit["name"],
+                    "TransitionModel": transition_fit["name"],
+                    "RecoveryModel": recovery_fit["name"],
+                }
+            )
+
+    calib_df = pd.DataFrame(leaderboard).sort_values(
+        ["utility", "val_model_vs_base_sharpe", "val_base_vs_legacy_sharpe"],
+        ascending=[False, False, False],
+    ).reset_index(drop=True)
+    if len(calib_df):
+        calib_df["candidate_id"] = np.arange(len(calib_df), dtype=int)
+        calib_df["base_vs_legacy_val_qvalue"] = bhy_qvalues(calib_df["base_vs_legacy_val_pvalue"].values, alpha=cfg_fold.bhy_alpha)
+        calib_df["model_vs_base_val_qvalue"] = bhy_qvalues(calib_df["model_vs_base_val_pvalue"].values, alpha=cfg_fold.bhy_alpha)
+        calib_df["model_vs_legacy_val_qvalue"] = bhy_qvalues(calib_df["model_vs_legacy_val_pvalue"].values, alpha=cfg_fold.bhy_alpha)
+
+    best = _select_candidate(calib_df, fold_n, cfg_fold) if len(calib_df) else {
+        "candidate_id": -1,
+        "base_mix": 0.28,
+        "defense_mix": 0.45,
+        "base_beta_penalty": 0.00,
+        "defense_beta_penalty": 0.05,
+        "raw_rel_boost": 1.00,
+        "structural_enter_thr": 0.82,
+        "transition_enter_thr": 0.68,
+        "recovery_enter_thr": 0.60,
+        "hawkes_weight": 0.14,
+        "structural_blend": 0.30,
+        "transition_blend": 0.08,
+        "structural_gate": 0.88,
+        "transition_gate": 0.90,
+        "recovery_gate": 1.04,
+        "transition_vol_mult": 0.92,
+        "recovery_vol_mult": 1.06,
+        "structural_exp_cap": 0.80,
+        "transition_exp_cap": 0.90,
+        "recovery_exp_cap": 1.06,
+    }
+
+    base_key = (round(float(best["base_mix"]), 6), round(float(best["base_beta_penalty"]), 6), round(float(best["raw_rel_boost"]), 6))
+    defense_key = (round(float(best["defense_mix"]), 6), round(float(best["defense_beta_penalty"]), 6), round(float(best["raw_rel_boost"]), 6))
+    base_cache_full = engine_cache_full[base_key]
+    defense_cache_full = engine_cache_full[defense_key]
+    base_cache_cal = engine_cache_cal[base_key]
+
+    base_bt = _build_base_candidate_bt(pre, base_cache_full, cfg_fold, costs, label="BASE_ALPHA")
+    base_bt_cal = _build_base_candidate_bt(pre_cal, base_cache_cal, cfg_fold, costs, label="BASE_ALPHA_CAL")
+
+    weekly_cal, hawkes_thresholds = _prepare_weekly_candidate_frame(base_bt_cal, base_cache_cal, ohlcv, pre_cal, cfg_fold, train_end)
+    train_weekly = weekly_cal.loc[:train_end].copy()
+    structural_fit = fit_structural_defense_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
+    transition_fit = fit_transition_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
+    recovery_fit = fit_recovery_model(train_weekly, cfg_fold, cfg_fold.outer_parallel)
+
+    weekly_full, _ = _prepare_weekly_candidate_frame(base_bt, base_cache_full, ohlcv, pre, cfg_fold, train_end, hawkes_thresholds=hawkes_thresholds)
+    weekly_full["structural_p"] = apply_structural_defense_model(structural_fit, weekly_full)
+    weekly_full["transition_p"] = apply_transition_model(transition_fit, weekly_full)
+    weekly_full["recovery_p"] = apply_recovery_model(recovery_fit, weekly_full)
+
+    policy_params = {k: float(best[k]) for k in cfg_fold.policy_grid().keys()}
+    override_weekly_full = build_override_weekly(weekly_full.loc[:test_end], policy_params, cfg_fold)
+    override_weekly = override_weekly_full.loc[test_start:test_end].copy()
+    override_daily = weekly_to_daily_override(override_weekly_full, pre["idx"], cfg_fold)
+    pre_test_mask = override_daily.index < test_start
+    if pre_test_mask.any():
+        override_daily.loc[pre_test_mask, "override_type"] = "BASELINE"
+        override_daily.loc[pre_test_mask, "override_detail"] = "BASELINE"
+        override_daily.loc[pre_test_mask, "defense_blend"] = 0.0
+        override_daily.loc[pre_test_mask, "gate_scale"] = 1.0
+        override_daily.loc[pre_test_mask, "vol_mult"] = 1.0
+        override_daily.loc[pre_test_mask, "exp_cap"] = 1.0
+        override_daily.loc[pre_test_mask, "is_override"] = 0.0
+        override_daily.loc[pre_test_mask, "is_structural_override"] = 0.0
+        override_daily.loc[pre_test_mask, "is_transition_override"] = 0.0
+        override_daily.loc[pre_test_mask, "is_recovery_lift"] = 0.0
+
+    weights_exec_1x = blend_engine_paths(base_cache_full, defense_cache_full, override_daily["defense_blend"])
+    model_bt = backtest_from_1x_weights(
+        pre,
+        weights_exec_1x,
+        override_daily["gate_scale"],
+        override_daily["vol_mult"],
+        override_daily["exp_cap"],
+        cfg_fold,
+        costs,
+        label=f"M12_{fold_n}",
+    )
+
+    s_legacy = _summarize_window(legacy_bt, test_start, test_end, cfg_fold, f"LEGACY_{fold_n}")
+    s_base = _summarize_window(base_bt, test_start, test_end, cfg_fold, f"BASE_{fold_n}")
+    s_model = _summarize_window(model_bt, test_start, test_end, cfg_fold, f"M12_{fold_n}")
+
+    legacy_r = legacy_bt["returns_net"].loc[test_start:test_end]
+    base_r = base_bt["returns_net"].loc[test_start:test_end]
+    model_r = model_bt["returns_net"].loc[test_start:test_end]
+
+    fold_row = {
+        "fold": fold_n,
+        "train": f"{train_start.date()}→{train_end.date()}",
+        "test": f"{test_start.date()}→{test_end.date()}",
+        "LEGACY_CAGR%": round(s_legacy["CAGR"] * 100, 2),
+        "LEGACY_Sharpe": round(s_legacy["Sharpe"], 4),
+        "LEGACY_MaxDD%": round(s_legacy["MaxDD"] * 100, 2),
+        "BASE_CAGR%": round(s_base["CAGR"] * 100, 2),
+        "BASE_Sharpe": round(s_base["Sharpe"], 4),
+        "BASE_MaxDD%": round(s_base["MaxDD"] * 100, 2),
+        "M12_CAGR%": round(s_model["CAGR"] * 100, 2),
+        "M12_Sharpe": round(s_model["Sharpe"], 4),
+        "M12_MaxDD%": round(s_model["MaxDD"] * 100, 2),
+        "StructuralModel": structural_fit["name"],
+        "TransitionModel": transition_fit["name"],
+        "RecoveryModel": recovery_fit["name"],
+        "OverrideRate": round(float(override_daily["is_override"].loc[test_start:test_end].mean()), 4),
+        "StructuralRate": round(float(override_daily["is_structural_override"].loc[test_start:test_end].mean()), 4),
+        "TransitionRate": round(float(override_daily["is_transition_override"].loc[test_start:test_end].mean()), 4),
+        "RecoveryLiftRate": round(float(override_daily["is_recovery_lift"].loc[test_start:test_end].mean()), 4),
+        "MeanGate": round(float(override_daily["gate_scale"].loc[test_start:test_end].mean()), 4),
+        "MeanDefenseBlend": round(float(override_daily["defense_blend"].loc[test_start:test_end].mean()), 4),
+        "Base_vs_Legacy_Val_pvalue": round(float(best.get("base_vs_legacy_val_pvalue", 1.0)), 6),
+        "Base_vs_Legacy_Val_qvalue": round(float(best.get("base_vs_legacy_val_qvalue", 1.0)), 6),
+        "Model_vs_Base_Val_pvalue": round(float(best.get("model_vs_base_val_pvalue", 1.0)), 6),
+        "Model_vs_Base_Val_qvalue": round(float(best.get("model_vs_base_val_qvalue", 1.0)), 6),
+        "Base_vs_Legacy_Test_pvalue": round(float(paired_ttest_pvalue(base_r - legacy_r, alternative="greater")), 6),
+        "Model_vs_Base_Test_pvalue": round(float(paired_ttest_pvalue(model_r - base_r, alternative="greater")), 6),
+        "Model_vs_Legacy_Test_pvalue": round(float(paired_ttest_pvalue(model_r - legacy_r, alternative="greater")), 6),
+        "Base_vs_Legacy_Test_qvalue": 1.0,
+        "Model_vs_Base_Test_qvalue": 1.0,
+        "Model_vs_Legacy_Test_qvalue": 1.0,
+        "SelectedCandidateId": int(best.get("candidate_id", -1)),
+    }
+
+    selected_candidate = {
+        "fold": fold_n,
+        "SelectedCandidateId": int(best.get("candidate_id", -1)),
+        "StructuralModel": structural_fit["name"],
+        "TransitionModel": transition_fit["name"],
+        "RecoveryModel": recovery_fit["name"],
+        **{k: best.get(k) for k in list(cfg_fold.engine_grid().keys()) + list(cfg_fold.policy_grid().keys())},
+        "utility": best.get("utility", np.nan),
+        "base_vs_legacy_val_pvalue": best.get("base_vs_legacy_val_pvalue", np.nan),
+        "base_vs_legacy_val_qvalue": best.get("base_vs_legacy_val_qvalue", np.nan),
+        "model_vs_base_val_pvalue": best.get("model_vs_base_val_pvalue", np.nan),
+        "model_vs_base_val_qvalue": best.get("model_vs_base_val_qvalue", np.nan),
+        "model_vs_legacy_val_pvalue": best.get("model_vs_legacy_val_pvalue", np.nan),
+        "model_vs_legacy_val_qvalue": best.get("model_vs_legacy_val_qvalue", np.nan),
+    }
+
+    return {
+        "fold": fold_n,
+        "legacy_bt": legacy_bt,
+        "base_bt": base_bt,
+        "m12_bt": model_bt,
+        "fold_row": fold_row,
+        "calibration_df": calib_df,
+        "override_weekly": override_weekly.assign(fold=fold_n),
+        "selected_candidate": selected_candidate,
+        "selection_support": _candidate_support(calib_df, float(best.get("candidate_id", -1)), cfg_fold).assign(fold=fold_n),
+    }
+
+
+def run_walk_forward_mahoraga12(
+    ohlcv: Dict[str, pd.DataFrame],
+    cfg: Mahoraga12Config,
+    costs: m6.CostsConfig,
+    universe_schedule: Optional[pd.DataFrame],
+) -> Dict[str, Any]:
+    folds = _load_folds(cfg, ohlcv)
+    global_pre = _prepare_global_invariants(ohlcv, cfg, universe_schedule)
+    tasks = [row for _, row in folds.iterrows()]
+    use_parallel = cfg.outer_parallel and len(tasks) > 1
+    if use_parallel:
+        results = Parallel(n_jobs=min(cfg.max_outer_jobs, len(tasks)), backend=cfg.outer_backend)(
+            delayed(_run_single_fold)(row, ohlcv, global_pre, cfg, costs, universe_schedule) for row in tasks
+        )
+    else:
+        results = [_run_single_fold(row, ohlcv, global_pre, cfg, costs, universe_schedule) for row in tasks]
+
+    results = sorted(results, key=lambda x: x["fold"])
+    fold_df = pd.DataFrame([r["fold_row"] for r in results]).sort_values("fold")
+    if len(fold_df):
+        fold_df["Base_vs_Legacy_Test_qvalue"] = bhy_qvalues(fold_df["Base_vs_Legacy_Test_pvalue"].values, alpha=cfg.bhy_alpha)
+        fold_df["Model_vs_Base_Test_qvalue"] = bhy_qvalues(fold_df["Model_vs_Base_Test_pvalue"].values, alpha=cfg.bhy_alpha)
+        fold_df["Model_vs_Legacy_Test_qvalue"] = bhy_qvalues(fold_df["Model_vs_Legacy_Test_pvalue"].values, alpha=cfg.bhy_alpha)
+
+    selected_df = pd.DataFrame([r["selected_candidate"] for r in results]).sort_values("fold") if results else pd.DataFrame()
+    support_df = pd.concat([r["selection_support"] for r in results], axis=0, ignore_index=True) if results else pd.DataFrame()
+    stitched_legacy = _stitch(results, "legacy_bt")
+    stitched_base = _stitch(results, "base_bt")
+    stitched_model = _stitch(results, "m12_bt")
+    return {
+        "results": results,
+        "fold_df": fold_df,
+        "selected_df": selected_df,
+        "support_df": support_df,
+        "stitched_legacy": stitched_legacy,
+        "stitched_base": stitched_base,
+        "stitched_m12": stitched_model,
+    }
