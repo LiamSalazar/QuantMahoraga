@@ -1,0 +1,78 @@
+MAHORAGA 12 — FAST REPORT
+==============================================================================
+
+OFFICIAL BASELINE: BASE_ALPHA
+HISTORICAL BENCHMARK: LEGACY
+
+STITCHED TEST-ONLY OOS COMPARISON
+  BASE_ALPHA CAGR=24.52%  Sharpe=1.192  MaxDD=-20.45%
+  M12        CAGR=24.52%  Sharpe=1.196  MaxDD=-20.45%
+  LEGACY     CAGR=23.07%  Sharpe=1.135  MaxDD=-21.11%
+
+STITCHED HYPOTHESIS TESTS
+          Comparison  p_value  q_value
+BASE_ALPHA_vs_LEGACY 0.233645 0.651022
+   M12_vs_BASE_ALPHA 0.513675 0.941738
+       M12_vs_LEGACY 0.236735 0.651022
+
+STITCHED TEST WINDOW TRACE
+Label  Fold SourceBacktest WindowType RequestedStart RequestedEnd SliceStart   SliceEnd  Rows
+  M12     1          M12_1  TEST_ONLY     2017-01-03   2018-12-31 2017-01-03 2018-12-31   502
+  M12     2          M12_2  TEST_ONLY     2019-01-02   2020-12-31 2019-01-02 2020-12-31   505
+  M12     3          M12_3  TEST_ONLY     2021-01-04   2022-12-30 2021-01-04 2022-12-30   503
+  M12     4          M12_4  TEST_ONLY     2023-01-03   2024-06-28 2023-01-03 2024-06-28   374
+  M12     5          M12_5  TEST_ONLY     2024-07-01   2026-02-20 2024-07-01 2026-02-19   411
+
+FLOOR / CEILING SUMMARY
+  Floor folds (3, 5): mean M12 Sharpe=0.4919
+  Ceiling folds (1, 2, 4): mean M12 Sharpe=1.5922
+
+ABLATION (FOLDS + STITCHED)
+ Segment  Fold                              Variant  CAGR%  Sharpe  MaxDD%  AvgExposure  AvgTurnover  PValue_vs_BASE_ALPHA  QValue_vs_BASE_ALPHA
+  FOLD_1     1                           BASE_ALPHA  14.22  0.9157  -13.30       0.5712       0.0359              1.000000              1.000000
+  FOLD_1     1 BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY  13.82  0.8947  -13.30       0.5676       0.0358              0.948516              1.000000
+  FOLD_1     1         BASE_ALPHA + TRANSITION_ONLY  14.22  0.9157  -13.30       0.5712       0.0359              1.000000              1.000000
+  FOLD_1     1          BASE_ALPHA + FULL_OVERRIDES  13.82  0.8947  -13.30       0.5676       0.0358              0.948516              1.000000
+  FOLD_2     2                           BASE_ALPHA  27.59  1.3328  -20.45       0.6244       0.0289              1.000000              1.000000
+  FOLD_2     2 BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY  26.61  1.2972  -20.45       0.6171       0.0287              0.947694              1.000000
+  FOLD_2     2         BASE_ALPHA + TRANSITION_ONLY  27.55  1.3317  -20.45       0.6241       0.0289              0.629448              1.000000
+  FOLD_2     2          BASE_ALPHA + FULL_OVERRIDES  26.47  1.2911  -20.45       0.6179       0.0288              0.966407              1.000000
+  FOLD_3     3                           BASE_ALPHA   9.40  0.5790  -18.34       0.5604       0.0311              1.000000              1.000000
+  FOLD_3     3 BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY  10.08  0.6141  -17.31       0.5553       0.0306              0.065118              0.179074
+  FOLD_3     3         BASE_ALPHA + TRANSITION_ONLY   9.40  0.5790  -18.34       0.5604       0.0311              1.000000              1.000000
+  FOLD_3     3          BASE_ALPHA + FULL_OVERRIDES  10.21  0.6198  -17.48       0.5559       0.0307              0.044790              0.179074
+  FOLD_4     4                           BASE_ALPHA  93.77  2.5477  -17.05       0.7835       0.0366              1.000000              1.000000
+  FOLD_4     4 BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY  95.11  2.5908  -16.51       0.7672       0.0367              0.341041              0.937864
+  FOLD_4     4         BASE_ALPHA + TRANSITION_ONLY  93.77  2.5477  -17.05       0.7835       0.0366              1.000000              1.000000
+  FOLD_4     4          BASE_ALPHA + FULL_OVERRIDES  95.11  2.5908  -16.51       0.7672       0.0367              0.341041              0.937864
+  FOLD_5     5                           BASE_ALPHA   5.21  0.3641  -14.33       0.5473       0.0314              1.000000              1.000000
+  FOLD_5     5 BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY   5.27  0.3674  -14.20       0.5448       0.0312              0.441350              1.000000
+  FOLD_5     5         BASE_ALPHA + TRANSITION_ONLY   5.14  0.3605  -14.33       0.5473       0.0315              0.684813              1.000000
+  FOLD_5     5          BASE_ALPHA + FULL_OVERRIDES   5.20  0.3640  -14.20       0.5463       0.0314              0.506599              1.000000
+STITCHED     0                           BASE_ALPHA  24.52  1.1925  -20.45       0.6109       0.0326              1.000000              1.000000
+STITCHED     0 BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY  24.53  1.1970  -20.45       0.6042       0.0324              0.503067              1.000000
+STITCHED     0         BASE_ALPHA + TRANSITION_ONLY  24.49  1.1915  -20.45       0.6108       0.0326              0.720409              1.000000
+STITCHED     0          BASE_ALPHA + FULL_OVERRIDES  24.52  1.1960  -20.45       0.6048       0.0325              0.513675              1.000000
+
+CURRENT FULL OVERRIDES VS CONTINUATION-ENHANCED MODEL
+ Segment  Fold               Variant  CAGR%  Sharpe  MaxDD%  PValue_vs_Current  QValue_vs_Current
+  FOLD_1     1           M12_CURRENT  13.82  0.8947  -13.30                1.0                1.0
+  FOLD_1     1 M12_WITH_CONTINUATION  13.82  0.8947  -13.30                1.0                1.0
+  FOLD_2     2           M12_CURRENT  26.47  1.2911  -20.45                1.0                1.0
+  FOLD_2     2 M12_WITH_CONTINUATION  26.47  1.2911  -20.45                1.0                1.0
+  FOLD_3     3           M12_CURRENT  10.21  0.6198  -17.48                1.0                1.0
+  FOLD_3     3 M12_WITH_CONTINUATION  10.21  0.6198  -17.48                1.0                1.0
+  FOLD_4     4           M12_CURRENT  95.11  2.5908  -16.51                1.0                1.0
+  FOLD_4     4 M12_WITH_CONTINUATION  95.11  2.5908  -16.51                1.0                1.0
+  FOLD_5     5           M12_CURRENT   5.20  0.3640  -14.20                1.0                1.0
+  FOLD_5     5 M12_WITH_CONTINUATION   5.20  0.3640  -14.20                1.0                1.0
+STITCHED     0           M12_CURRENT  24.52  1.1960  -20.45                1.0                1.0
+STITCHED     0 M12_WITH_CONTINUATION  24.52  1.1960  -20.45                1.0                1.0
+
+FOLD SUMMARY
+ fold                 train                  test  LEGACY_CAGR%  LEGACY_Sharpe  LEGACY_MaxDD%  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  M12_Current_CAGR%  M12_Current_Sharpe  M12_Current_MaxDD%  M12_CAGR%  M12_Sharpe  M12_MaxDD% StructuralModel  TransitionModel  RecoveryModel ContinuationModel  OverrideRate  CurrentOverrideRate  StructuralRate  TransitionRate  RecoveryLiftRate  ContinuationReentryRate  MeanGate  MeanDefenseBlend  Base_vs_Legacy_Val_pvalue  Base_vs_Legacy_Val_qvalue  Model_vs_Base_Val_pvalue  Model_vs_Base_Val_qvalue  Base_vs_Legacy_Test_pvalue  Model_vs_Base_Test_pvalue  Model_vs_Legacy_Test_pvalue  Base_vs_Legacy_Test_qvalue  Model_vs_Base_Test_qvalue  Model_vs_Legacy_Test_qvalue  SelectedCandidateId
+    1 2006-01-01→2013-12-31 2017-01-03→2018-12-31         12.85         0.8238         -13.43       14.22       0.9157       -13.30              13.82              0.8947              -13.30      13.82      0.8947      -13.30       rf_struct logit_transition    rf_recovery   rf_continuation        0.1454               0.1454          0.1454          0.0000            0.0000                      0.0    0.9825            0.0436                   0.314017                   1.000000                  0.103264                       1.0                    0.309294                   0.948516                     0.365024                     0.99309                   1.000000                     0.993999                    0
+    2 2006-01-01→2015-12-31 2019-01-02→2020-12-31         25.23         1.2431         -20.24       27.59       1.3328       -20.45              26.47              1.2911              -20.45      26.47      1.2911      -20.45       rf_struct logit_transition    rf_recovery   rf_continuation        0.2436               0.2436          0.2040          0.0396            0.0198                      0.0    0.9735            0.0628                   0.326464                   1.000000                  0.376535                       1.0                    0.084346                   0.966407                     0.228148                     0.96295                   1.000000                     0.993999                    0
+    3 2006-01-01→2017-12-29 2021-01-04→2022-12-30          8.96         0.5705         -18.57        9.40       0.5790       -18.34              10.21              0.6198              -17.48      10.21      0.6198      -17.48       rf_struct logit_transition logit_recovery   rf_continuation        0.3082               0.3082          0.2883          0.0199            0.0199                      0.0    0.9664            0.1297                   0.174963                   1.000000                  0.270595                       1.0                    0.397634                   0.044790                     0.268890                     0.99309                   0.511352                     0.993999                    0
+    4 2006-01-01→2019-12-31 2023-01-03→2024-06-28         91.85         2.5320         -17.05       93.77       2.5477       -17.05              95.11              2.5908              -16.51      95.11      2.5908      -16.51    logit_struct logit_transition    rf_recovery   rf_continuation        0.0749               0.0749          0.0749          0.0000            0.0000                      0.0    0.9910            0.0337                   0.124408                   0.839072                  0.581784                       1.0                    0.356141                   0.341041                     0.285003                     0.99309                   1.000000                     0.993999                    0
+    5 2006-01-01→2021-12-31 2024-07-01→2026-02-20          3.77         0.2873         -15.32        5.21       0.3641       -14.33               5.20              0.3640              -14.20       5.20      0.3640      -14.20    logit_struct logit_transition    rf_recovery   rf_continuation        0.3041               0.3041          0.2701          0.0341            0.0341                      0.0    0.9693            0.1215                   0.094725                   0.580130                  0.312530                       1.0                    0.434930                   0.506599                     0.435328                     0.99309                   1.000000                     0.993999                    0
