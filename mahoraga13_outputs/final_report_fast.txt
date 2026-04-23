@@ -1,0 +1,80 @@
+MAHORAGA 13 — FAST REPORT
+==============================================================================
+
+OFFICIAL BASELINE: BASE_ALPHA
+HISTORICAL BENCHMARK: LEGACY
+MAIN BRANCH: STRUCTURAL_DEFENSE_ONLY
+EXPERIMENTAL BRANCHES: CONTINUATION_V2_ONLY, STRUCTURAL_DEFENSE_PLUS_CONTINUATION_V2
+
+STITCHED COMPARISON
+                                          Variant  CAGR%  Sharpe  MaxDD%  AvgExposure  AvgTurnover
+                                           LEGACY  23.07  1.1348  -21.11       0.6069       0.0331
+                                       BASE_ALPHA  24.52  1.1925  -20.45       0.6109       0.0326
+             BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY  24.40  1.1907  -20.45       0.6056       0.0324
+                BASE_ALPHA + CONTINUATION_V2_ONLY  24.52  1.1925  -20.45       0.6109       0.0326
+BASE_ALPHA + STRUCTURAL_DEFENSE + CONTINUATION_V2  24.40  1.1907  -20.45       0.6056       0.0324
+
+STITCHED P-VALUE / Q-VALUE
+ Segment  Fold                                            Comparison  Reference                                            Target  p_value  q_value
+STITCHED     0                                  BASE_ALPHA_vs_LEGACY     LEGACY                                        BASE_ALPHA 0.233645      1.0
+STITCHED     0                 STRUCTURAL_DEFENSE_ONLY_vs_BASE_ALPHA BASE_ALPHA              BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY 0.696197      1.0
+STITCHED     0                    CONTINUATION_V2_ONLY_vs_BASE_ALPHA BASE_ALPHA                 BASE_ALPHA + CONTINUATION_V2_ONLY 1.000000      1.0
+STITCHED     0 STRUCTURAL_DEFENSE_PLUS_CONTINUATION_V2_vs_BASE_ALPHA BASE_ALPHA BASE_ALPHA + STRUCTURAL_DEFENSE + CONTINUATION_V2 0.696197      1.0
+
+FLOOR / CEILING SUMMARY
+                                          Variant  CeilingMeanSharpe  CeilingDeltaVsBase  FloorMeanSharpe  FloorDeltaVsBase  Fold5Sharpe  Fold5DeltaVsBase  StitchedSharpe
+                                           LEGACY             1.5330             -0.0658           0.4289           -0.0426       0.2873           -0.0768          1.1348
+                                       BASE_ALPHA             1.5987              0.0000           0.4715            0.0000       0.3641            0.0000          1.1925
+             BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY             1.5873             -0.0114           0.4858            0.0142       0.3671            0.0030          1.1907
+                BASE_ALPHA + CONTINUATION_V2_ONLY             1.5987              0.0000           0.4715            0.0000       0.3641            0.0000          1.1925
+BASE_ALPHA + STRUCTURAL_DEFENSE + CONTINUATION_V2             1.5873             -0.0114           0.4858            0.0142       0.3671            0.0030          1.1907
+
+STITCHED OVERRIDE USAGE
+ Segment  Fold                                           Variant  OverrideRate  StructuralRate  ContinuationV2Rate  MeanDefenseBlend  MeanGate  MeanVolMult  MeanExpCap
+STITCHED     0                                        BASE_ALPHA        0.0000          0.0000                 0.0            0.0000    1.0000       1.0000      1.0000
+STITCHED     0              BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY        0.1956          0.1956                 0.0            0.0758    0.9765       0.9863      0.9682
+STITCHED     0                 BASE_ALPHA + CONTINUATION_V2_ONLY        0.0000          0.0000                 0.0            0.0000    1.0000       1.0000      1.0000
+STITCHED     0 BASE_ALPHA + STRUCTURAL_DEFENSE + CONTINUATION_V2        0.1956          0.1956                 0.0            0.0758    0.9765       0.9863      0.9682
+
+ABLATION (FOLDS + STITCHED)
+ Segment  Fold                                           Variant  CAGR%  Sharpe  MaxDD%  AvgExposure  AvgTurnover  PValue_vs_BASE_ALPHA  QValue_vs_BASE_ALPHA
+  FOLD_1     1                                        BASE_ALPHA  14.22  0.9157  -13.30       0.5712       0.0359              1.000000                   1.0
+  FOLD_1     1              BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY  13.88  0.8977  -13.30       0.5690       0.0359              0.970715                   1.0
+  FOLD_1     1                 BASE_ALPHA + CONTINUATION_V2_ONLY  14.22  0.9157  -13.30       0.5712       0.0359              1.000000                   1.0
+  FOLD_1     1 BASE_ALPHA + STRUCTURAL_DEFENSE + CONTINUATION_V2  13.88  0.8977  -13.30       0.5690       0.0359              0.970715                   1.0
+  FOLD_2     2                                        BASE_ALPHA  27.59  1.3328  -20.45       0.6244       0.0289              1.000000                   1.0
+  FOLD_2     2              BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY  26.61  1.2972  -20.45       0.6171       0.0287              0.947694                   1.0
+  FOLD_2     2                 BASE_ALPHA + CONTINUATION_V2_ONLY  27.59  1.3328  -20.45       0.6244       0.0289              1.000000                   1.0
+  FOLD_2     2 BASE_ALPHA + STRUCTURAL_DEFENSE + CONTINUATION_V2  26.61  1.2972  -20.45       0.6171       0.0287              0.947694                   1.0
+  FOLD_3     3                                        BASE_ALPHA   9.40  0.5790  -18.34       0.5604       0.0311              1.000000                   1.0
+  FOLD_3     3              BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY   9.89  0.6044  -17.60       0.5566       0.0308              0.095527                   1.0
+  FOLD_3     3                 BASE_ALPHA + CONTINUATION_V2_ONLY   9.40  0.5790  -18.34       0.5604       0.0311              1.000000                   1.0
+  FOLD_3     3 BASE_ALPHA + STRUCTURAL_DEFENSE + CONTINUATION_V2   9.89  0.6044  -17.60       0.5566       0.0308              0.095527                   1.0
+  FOLD_4     4                                        BASE_ALPHA  93.77  2.5477  -17.05       0.7835       0.0366              1.000000                   1.0
+  FOLD_4     4              BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY  94.15  2.5670  -17.05       0.7713       0.0359              0.433937                   1.0
+  FOLD_4     4                 BASE_ALPHA + CONTINUATION_V2_ONLY  93.77  2.5477  -17.05       0.7835       0.0366              1.000000                   1.0
+  FOLD_4     4 BASE_ALPHA + STRUCTURAL_DEFENSE + CONTINUATION_V2  94.15  2.5670  -17.05       0.7713       0.0359              0.433937                   1.0
+  FOLD_5     5                                        BASE_ALPHA   5.21  0.3641  -14.33       0.5473       0.0314              1.000000                   1.0
+  FOLD_5     5              BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY   5.26  0.3671  -14.22       0.5452       0.0312              0.435631                   1.0
+  FOLD_5     5                 BASE_ALPHA + CONTINUATION_V2_ONLY   5.21  0.3641  -14.33       0.5473       0.0314              1.000000                   1.0
+  FOLD_5     5 BASE_ALPHA + STRUCTURAL_DEFENSE + CONTINUATION_V2   5.26  0.3671  -14.22       0.5452       0.0312              0.435631                   1.0
+STITCHED     0                                        BASE_ALPHA  24.52  1.1925  -20.45       0.6109       0.0326              1.000000                   1.0
+STITCHED     0              BASE_ALPHA + STRUCTURAL_DEFENSE_ONLY  24.40  1.1907  -20.45       0.6056       0.0324              0.696197                   1.0
+STITCHED     0                 BASE_ALPHA + CONTINUATION_V2_ONLY  24.52  1.1925  -20.45       0.6109       0.0326              1.000000                   1.0
+STITCHED     0 BASE_ALPHA + STRUCTURAL_DEFENSE + CONTINUATION_V2  24.40  1.1907  -20.45       0.6056       0.0324              0.696197                   1.0
+
+FOLD SUMMARY
+ fold fold_role                 train                  test  LEGACY_CAGR%  LEGACY_Sharpe  LEGACY_MaxDD%  BASE_CAGR%  BASE_Sharpe  BASE_MaxDD%  MAIN_CAGR%  MAIN_Sharpe  MAIN_MaxDD%  CONT_V2_CAGR%  CONT_V2_Sharpe  CONT_V2_MaxDD%  COMBO_CAGR%  COMBO_Sharpe  COMBO_MaxDD% StructuralModel ContinuationV2Model  ContinuationV2EntryThreshold  MainOverrideRate  MainStructuralRate  ContinuationV2OnlyRate  ComboOverrideRate  ComboStructuralRate  ComboContinuationV2Rate  Base_vs_Legacy_Val_pvalue  Base_vs_Legacy_Val_qvalue  Main_vs_Base_Val_pvalue  Main_vs_Base_Val_qvalue  Base_vs_Legacy_Test_pvalue  Main_vs_Base_Test_pvalue  ContinuationV2_vs_Base_Test_pvalue  Combo_vs_Base_Test_pvalue  Base_vs_Legacy_Test_qvalue  Main_vs_Base_Test_qvalue  ContinuationV2_vs_Base_Test_qvalue  Combo_vs_Base_Test_qvalue  SelectedCandidateId
+    1   CEILING 2006-01-01→2013-12-31 2017-01-03→2018-12-31         12.85         0.8238         -13.43       14.22       0.9157       -13.30       13.88       0.8977       -13.30          14.22          0.9157          -13.30        13.88        0.8977        -13.30       rf_struct  rf_continuation_v2                          0.58            0.1355              0.1355                     0.0             0.1355               0.1355                      0.0                   0.314017                   1.000000                 0.231651                      1.0                    0.309294                  0.970715                                 1.0                   0.970715                     0.99309                       1.0                                 1.0                        1.0                    0
+    2   CEILING 2006-01-01→2015-12-31 2019-01-02→2020-12-31         25.23         1.2431         -20.24       27.59       1.3328       -20.45       26.61       1.2972       -20.45          27.59          1.3328          -20.45        26.61        1.2972        -20.45       rf_struct  rf_continuation_v2                          0.58            0.2000              0.2000                     0.0             0.2000               0.2000                      0.0                   0.326464                   1.000000                 0.376535                      1.0                    0.084346                  0.947694                                 1.0                   0.947694                     0.96295                       1.0                                 1.0                        1.0                    0
+    3     FLOOR 2006-01-01→2017-12-29 2021-01-04→2022-12-30          8.96         0.5705         -18.57        9.40       0.5790       -18.34        9.89       0.6044       -17.60           9.40          0.5790          -18.34         9.89        0.6044        -17.60       rf_struct  rf_continuation_v2                          0.58            0.2883              0.2883                     0.0             0.2883               0.2883                      0.0                   0.174963                   1.000000                 0.407511                      1.0                    0.397634                  0.095527                                 1.0                   0.095527                     0.99309                       1.0                                 1.0                        1.0                    0
+    4   CEILING 2006-01-01→2019-12-31 2023-01-03→2024-06-28         91.85         2.5320         -17.05       93.77       2.5477       -17.05       94.15       2.5670       -17.05          93.77          2.5477          -17.05        94.15        2.5670        -17.05    logit_struct  rf_continuation_v2                          0.58            0.0508              0.0508                     0.0             0.0508               0.0508                      0.0                   0.124408                   0.744374                 0.468367                      1.0                    0.356141                  0.433937                                 1.0                   0.433937                     0.99309                       1.0                                 1.0                        1.0                    0
+    5     FLOOR 2006-01-01→2021-12-31 2024-07-01→2026-02-20          3.77         0.2873         -15.32        5.21       0.3641       -14.33        5.26       0.3671       -14.22           5.21          0.3641          -14.33         5.26        0.3671        -14.22    logit_struct  rf_continuation_v2                          0.58            0.2822              0.2822                     0.0             0.2822               0.2822                      0.0                   0.094725                   0.514656                 0.352098                      1.0                    0.434930                  0.435631                                 1.0                   0.435631                     0.99309                       1.0                                 1.0                        1.0                    0
+
+STITCHED TEST WINDOW TRACE
+                  Label  Fold            SourceBacktest WindowType RequestedStart RequestedEnd SliceStart   SliceEnd  Rows
+STRUCTURAL_DEFENSE_ONLY     1 STRUCTURAL_DEFENSE_ONLY_1  TEST_ONLY     2017-01-03   2018-12-31 2017-01-03 2018-12-31   502
+STRUCTURAL_DEFENSE_ONLY     2 STRUCTURAL_DEFENSE_ONLY_2  TEST_ONLY     2019-01-02   2020-12-31 2019-01-02 2020-12-31   505
+STRUCTURAL_DEFENSE_ONLY     3 STRUCTURAL_DEFENSE_ONLY_3  TEST_ONLY     2021-01-04   2022-12-30 2021-01-04 2022-12-30   503
+STRUCTURAL_DEFENSE_ONLY     4 STRUCTURAL_DEFENSE_ONLY_4  TEST_ONLY     2023-01-03   2024-06-28 2023-01-03 2024-06-28   374
+STRUCTURAL_DEFENSE_ONLY     5 STRUCTURAL_DEFENSE_ONLY_5  TEST_ONLY     2024-07-01   2026-02-20 2024-07-01 2026-02-19   411
