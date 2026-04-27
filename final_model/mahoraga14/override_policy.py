@@ -190,8 +190,7 @@ def build_override_weekly(
         soft_candidate = (
             flags["allow_continuation"]
             and bool(row["continuation_structural_low"] > 0.0)
-            and bool(row["continuation_compression_valid"] > 0.0)
-            and bool(row["continuation_pause_valid"] > 0.0)
+            and bool((row["continuation_compression_valid"] > 0.0) or (row["continuation_pause_valid"] > 0.0))
             and bool(row["continuation_benchmark_valid"] > 0.0)
             and bool(row["continuation_trigger_valid"] > 0.0)
             and bool(row["structural_score"] <= structural_enter - cfg.continuation_structural_margin)

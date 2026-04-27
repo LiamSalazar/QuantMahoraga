@@ -337,8 +337,7 @@ def annotate_continuation_v2_labels(weekly_df: pd.DataFrame, train_end: pd.Times
     non_fragile_now = context["structural_low"].astype(bool)
 
     out["continuation_y"] = (
-        context["compression_valid"].astype(bool)
-        & context["pause_valid"].astype(bool)
+        (context["compression_valid"].astype(bool) | context["pause_valid"].astype(bool))
         & context["benchmark_valid"].astype(bool)
         & context["trigger_valid"].astype(bool)
         & non_fragile_now

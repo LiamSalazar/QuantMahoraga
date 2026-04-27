@@ -720,6 +720,8 @@ def _run_single_fold(
     main_override = variant_runs[cfg_fold.main_variant_key]["override_daily"].loc[test_start:test_end]
     cont_override = variant_runs[cfg_fold.continuation_variant_key]["override_daily"].loc[test_start:test_end]
     combo_override = variant_runs[cfg_fold.combo_variant_key]["override_daily"].loc[test_start:test_end]
+    cont_override_weekly = variant_runs[cfg_fold.continuation_variant_key]["override_weekly"]
+    combo_override_weekly = variant_runs[cfg_fold.combo_variant_key]["override_weekly"]
     fold_role = "CEILING" if fold_n in cfg_fold.ceiling_folds else "FLOOR"
 
     fold_row = {
@@ -753,11 +755,11 @@ def _run_single_fold(
         "MainOverrideRate": round(float(main_override["is_override"].mean()), 4),
         "MainStructuralRate": round(float(main_override["is_structural_override"].mean()), 4),
         "ContinuationLiftRate": round(float(cont_override["is_continuation_lift"].mean()), 4),
-        "ContinuationActivationRate": round(float(cont_override["is_continuation_activation"].mean()), 4),
+        "ContinuationActivationRate": round(float(cont_override_weekly["is_continuation_activation"].mean()), 4),
         "ComboOverrideRate": round(float(combo_override["is_override"].mean()), 4),
         "ComboStructuralRate": round(float(combo_override["is_structural_override"].mean()), 4),
         "ComboContinuationLiftRate": round(float(combo_override["is_continuation_lift"].mean()), 4),
-        "ComboContinuationActivationRate": round(float(combo_override["is_continuation_activation"].mean()), 4),
+        "ComboContinuationActivationRate": round(float(combo_override_weekly["is_continuation_activation"].mean()), 4),
         "Base_vs_Legacy_Val_pvalue": round(float(best.get("base_vs_legacy_val_pvalue", 1.0)), 6),
         "Base_vs_Legacy_Val_qvalue": round(float(best.get("base_vs_legacy_val_qvalue", 1.0)), 6),
         "Main_vs_Base_Val_pvalue": round(float(best.get("main_vs_base_val_pvalue", 1.0)), 6),
