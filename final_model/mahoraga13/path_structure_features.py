@@ -45,6 +45,11 @@ def _down_up_ratio(r: pd.Series, window: int) -> pd.Series:
     return (downside / upside).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
 
+def _safe_ratio(num: pd.Series, den: pd.Series) -> pd.Series:
+    eps = np.finfo(float).eps
+    return (num / den.abs().clip(lower=eps)).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+
 def _drawdown_duration(eq: pd.Series) -> pd.Series:
     at_high = eq >= eq.cummax() - 1e-12
     groups = at_high.astype(int).cumsum()
@@ -173,5 +178,20 @@ def build_weekly_path_dataset(daily_ctx: pd.DataFrame, cfg: Mahoraga13Config) ->
     weekly["breadth_rebound_4w"] = weekly["breadth_change_21"].rolling(4).mean().fillna(0.0)
     weekly["qqq_rebound_2w"] = weekly["qqq_rebound_10d"].rolling(2).mean().fillna(0.0)
     weekly["base_minus_qqq_4w"] = weekly["base_ret_4w"] - weekly["qqq_ret_2w"].rolling(2).sum().fillna(0.0)
+
+    swing_amp_2w = weekly["base_r"].abs().rolling(2, min_periods=1).sum()
+    swing_amp_4w = weekly["base_r"].abs().rolling(4, min_periods=1).sum()
+    weekly["path_efficiency_2w"] = weekly["base_eff_2w"].clip(0.0, 1.0).fillna(0.0)
+    weekly["path_efficiency_4w"] = weekly["base_eff_4w"].clip(0.0, 1.0).fillna(0.0)
+    weekly["swing_amplitude_vs_net_2w"] = _safe_ratio(swing_amp_2w, weekly["base_ret_2w"])
+    weekly["swing_amplitude_vs_net_4w"] = _safe_ratio(swing_amp_4w, weekly["base_ret_4w"])
+    weekly["compression_score_2w"] = (
+        np.log1p(weekly["swing_amplitude_vs_net_2w"].clip(lower=0.0))
+        * (1.0 - weekly["path_efficiency_2w"])
+    ).fillna(0.0)
+    weekly["compression_score_4w"] = (
+        np.log1p(weekly["swing_amplitude_vs_net_4w"].clip(lower=0.0))
+        * (1.0 - weekly["path_efficiency_4w"])
+    ).fillna(0.0)
     return weekly
 

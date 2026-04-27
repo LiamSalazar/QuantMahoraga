@@ -57,9 +57,12 @@ class Mahoraga13Config(m6.Mahoraga6Config):
     max_gate_scale: float = 1.10
 
     # Experimental continuation_v2 guard rails.
-    continuation_v2_entry_floor: float = 0.58
-    continuation_v2_entry_cap: float = 0.92
-    continuation_v2_structural_margin: float = 0.05
+    continuation_v2_entry_floor: float = 0.10
+    continuation_v2_entry_cap: float = 0.40
+    continuation_v2_target_rate: float = 0.05
+    continuation_v2_min_rate: float = 0.01
+    continuation_v2_rate_cap: float = 0.10
+    continuation_v2_structural_margin: float = 0.06
     continuation_v2_gate: float = 1.03
     continuation_v2_vol_mult: float = 1.04
     continuation_v2_exp_cap: float = 1.05

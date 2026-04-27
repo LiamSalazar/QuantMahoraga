@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 
+from continuation_v2_model import evaluate_continuation_v2_context
 from mahoraga13_config import Mahoraga13Config
 from mahoraga13_utils import iter_grid, sigmoid
 
@@ -57,6 +58,20 @@ def build_override_weekly(
         dtype=float,
     ).fillna(0.0)
 
+    if guard_thresholds:
+        context = evaluate_continuation_v2_context(out, guard_thresholds)
+    else:
+        context = pd.DataFrame(
+            {
+                "compression_valid": 0.0,
+                "pause_valid": 0.0,
+                "support_valid": 0.0,
+                "benchmark_valid": 0.0,
+                "stress_ok": 0.0,
+            },
+            index=out.index,
+        )
+
     structural_path = pd.Series(
         sigmoid(
             2.4 * (-out["base_dd"])
@@ -72,35 +87,51 @@ def build_override_weekly(
         index=out.index,
     ).clip(0.0, 1.0)
 
-    continuation_components = pd.concat(
+    compression_path = pd.concat(
         [
-            _normalize_signal(out.get("local_compression", pd.Series(0.0, index=out.index))).rename("local_compression"),
-            _normalize_signal(out.get("local_breakout_efficiency", pd.Series(0.0, index=out.index))).rename("local_breakout_efficiency"),
-            _normalize_signal(out.get("stop_pressure_release", pd.Series(0.0, index=out.index))).rename("stop_pressure_release"),
-            _normalize_signal(out.get("stop_density_decay", pd.Series(0.0, index=out.index))).rename("stop_density_decay"),
-            _normalize_signal(out.get("corr_release_4w", pd.Series(0.0, index=out.index))).rename("corr_release_4w"),
+            _normalize_signal(1.0 - out.get("path_efficiency_2w", pd.Series(0.0, index=out.index))).rename("path_efficiency_2w"),
+            _normalize_signal(1.0 - out.get("path_efficiency_4w", pd.Series(0.0, index=out.index))).rename("path_efficiency_4w"),
+            _normalize_signal(out.get("swing_amplitude_vs_net_2w", pd.Series(0.0, index=out.index))).rename("swing_amplitude_vs_net_2w"),
+            _normalize_signal(out.get("swing_amplitude_vs_net_4w", pd.Series(0.0, index=out.index))).rename("swing_amplitude_vs_net_4w"),
+            _normalize_signal(out.get("compression_score_2w", pd.Series(0.0, index=out.index))).rename("compression_score_2w"),
+            _normalize_signal(out.get("compression_score_4w", pd.Series(0.0, index=out.index))).rename("compression_score_4w"),
+        ],
+        axis=1,
+    ).mean(axis=1).clip(0.0, 1.0)
+    support_path = pd.concat(
+        [
+            _normalize_signal(out.get("base_ret_1w", pd.Series(0.0, index=out.index))).rename("base_ret_1w"),
+            _normalize_signal(out.get("base_ret_2w", pd.Series(0.0, index=out.index))).rename("base_ret_2w"),
+            _normalize_signal(out.get("stop_release_2w", pd.Series(0.0, index=out.index))).rename("stop_release_2w"),
             _normalize_signal(out.get("breadth_rebound_4w", pd.Series(0.0, index=out.index))).rename("breadth_rebound_4w"),
             _normalize_signal(out.get("scale_recovery_2w", pd.Series(0.0, index=out.index))).rename("scale_recovery_2w"),
-            _normalize_signal(out.get("qqq_continuation", pd.Series(0.0, index=out.index))).rename("qqq_continuation"),
+            _normalize_signal(out.get("corr_release_4w", pd.Series(0.0, index=out.index))).rename("corr_release_4w"),
+            _normalize_signal(out.get("qqq_ret_2w", pd.Series(0.0, index=out.index))).rename("qqq_ret_2w"),
+            _normalize_signal(out.get("qqq_rebound_2w", pd.Series(0.0, index=out.index))).rename("qqq_rebound_2w"),
             hawkes_release.rename("hawkes_release"),
         ],
         axis=1,
-    )
-    continuation_path = continuation_components.mean(axis=1).clip(0.0, 1.0)
+    ).mean(axis=1).clip(0.0, 1.0)
+    continuation_path = (0.55 * compression_path + 0.45 * support_path).clip(0.0, 1.0)
 
     out["structural_path_score"] = structural_path
     out["continuation_v2_path_score"] = continuation_path
     out["stress_hawkes_norm"] = stress_hawkes
     out["recovery_hawkes_norm"] = recovery_hawkes
     out["continuation_v2_p"] = continuation_p
+    out["continuation_compression_valid"] = pd.Series(context["compression_valid"], index=out.index, dtype=float).fillna(0.0)
+    out["continuation_pause_valid"] = pd.Series(context["pause_valid"], index=out.index, dtype=float).fillna(0.0)
+    out["continuation_support_valid"] = pd.Series(context["support_valid"], index=out.index, dtype=float).fillna(0.0)
+    out["continuation_benchmark_valid"] = pd.Series(context["benchmark_valid"], index=out.index, dtype=float).fillna(0.0)
+    out["continuation_stress_ok"] = pd.Series(context["stress_ok"], index=out.index, dtype=float).fillna(0.0)
     out["structural_score"] = (
         0.74 * pd.Series(out.get("structural_p", 0.0), index=out.index, dtype=float).fillna(0.0)
         + 0.22 * out["structural_path_score"]
         + 0.04 * hawkes_weight * stress_hawkes
     ).clip(0.0, 1.0)
     out["continuation_v2_score"] = (
-        0.75 * continuation_p
-        + 0.25 * continuation_path
+        0.78 * continuation_p
+        + 0.22 * continuation_path
     ).clip(0.0, 1.0)
 
     structural_enter = float(policy_params["structural_enter_thr"])
@@ -116,6 +147,8 @@ def build_override_weekly(
     out["is_override"] = 0.0
     out["is_structural_override"] = 0.0
     out["is_continuation_v2"] = 0.0
+    out["is_continuation_reentry"] = 0.0
+    out["continuation_guard_pass"] = 0.0
 
     structural_on = False
     for dt in out.index:
@@ -149,38 +182,27 @@ def build_override_weekly(
             out.loc[dt, "is_structural_override"] = 1.0
             continue
 
-        release_ok = (
-            (row.get("stop_pressure_release", 0.0) >= float(guard_thresholds.get("release_min", np.inf)))
-            or (row.get("stop_density_decay", 0.0) >= float(guard_thresholds.get("decay_min", np.inf)))
-            or (row.get("corr_release_4w", 0.0) >= float(guard_thresholds.get("corr_min", np.inf)))
-            or (row.get("breadth_rebound_4w", 0.0) >= float(guard_thresholds.get("breadth_min", np.inf)))
-            or (row.get("scale_recovery_2w", 0.0) >= float(guard_thresholds.get("scale_min", np.inf)))
-            or (row.get("qqq_continuation", 0.0) >= float(guard_thresholds.get("qqq_min", np.inf)))
-        )
-        pause_ok = (
-            (row["base_dd"] >= float(guard_thresholds.get("base_dd_floor", np.inf * -1.0)))
-            and (row["base_dd"] <= float(guard_thresholds.get("base_dd_cap", np.inf)))
-            and (row["loss_share_4w"] <= float(guard_thresholds.get("loss_share_cap", np.inf)))
-        )
         continuation_guard = (
             flags["allow_continuation_v2"]
-            and release_ok
-            and pause_ok
-            and (row.get("local_compression", 0.0) >= float(guard_thresholds.get("compression_min", np.inf)))
-            and (row.get("swing_amplitude_vs_net_disp", 0.0) >= float(guard_thresholds.get("swing_ratio_min", np.inf)))
-            and (row.get("local_breakout_efficiency", 0.0) >= float(guard_thresholds.get("breakout_min", np.inf)))
+            and bool(row["continuation_compression_valid"] > 0.0)
+            and bool(row["continuation_pause_valid"] > 0.0)
+            and bool(row["continuation_support_valid"] > 0.0)
+            and bool(row["continuation_benchmark_valid"] > 0.0)
+            and bool(row["continuation_stress_ok"] > 0.0)
             and (row["continuation_v2_score"] >= continuation_enter)
             and (row["structural_score"] <= structural_enter - cfg.continuation_v2_structural_margin)
         )
+        out.loc[dt, "continuation_guard_pass"] = float(continuation_guard)
         if continuation_guard:
-            out.loc[dt, "override_type"] = "CONTINUATION_V2"
-            out.loc[dt, "override_detail"] = "CONTINUATION_AFTER_COMPRESSION"
+            out.loc[dt, "override_type"] = "CONTINUATION_LIFT"
+            out.loc[dt, "override_detail"] = "CONTINUATION_LIFT"
             out.loc[dt, "defense_blend"] = 0.0
             out.loc[dt, "gate_scale"] = float(cfg.continuation_v2_gate)
             out.loc[dt, "vol_mult"] = float(cfg.continuation_v2_vol_mult)
             out.loc[dt, "exp_cap"] = float(cfg.continuation_v2_exp_cap)
             out.loc[dt, "is_override"] = 1.0
             out.loc[dt, "is_continuation_v2"] = 1.0
+            out.loc[dt, "is_continuation_reentry"] = 1.0
 
     return out
 
@@ -196,10 +218,17 @@ def weekly_to_daily_override(override_weekly: pd.DataFrame, idx: pd.DatetimeInde
         "is_override",
         "is_structural_override",
         "is_continuation_v2",
+        "is_continuation_reentry",
         "structural_score",
         "continuation_v2_score",
         "structural_p",
         "continuation_v2_p",
+        "continuation_compression_valid",
+        "continuation_pause_valid",
+        "continuation_support_valid",
+        "continuation_benchmark_valid",
+        "continuation_stress_ok",
+        "continuation_guard_pass",
     ]
     out = override_weekly[cols].reindex(idx).ffill()
     out["defense_blend"] = out["defense_blend"].fillna(0.0).clip(0.0, 1.0)
@@ -209,8 +238,20 @@ def weekly_to_daily_override(override_weekly: pd.DataFrame, idx: pd.DatetimeInde
     out["is_override"] = out["is_override"].fillna(0.0)
     out["is_structural_override"] = out["is_structural_override"].fillna(0.0)
     out["is_continuation_v2"] = out["is_continuation_v2"].fillna(0.0)
+    out["is_continuation_reentry"] = out["is_continuation_reentry"].fillna(0.0)
     out["override_type"] = out["override_type"].fillna("BASELINE")
     out["override_detail"] = out["override_detail"].fillna("BASELINE")
-    for col in ["structural_score", "continuation_v2_score", "structural_p", "continuation_v2_p"]:
+    for col in [
+        "structural_score",
+        "continuation_v2_score",
+        "structural_p",
+        "continuation_v2_p",
+        "continuation_compression_valid",
+        "continuation_pause_valid",
+        "continuation_support_valid",
+        "continuation_benchmark_valid",
+        "continuation_stress_ok",
+        "continuation_guard_pass",
+    ]:
         out[col] = out[col].fillna(0.0)
     return out

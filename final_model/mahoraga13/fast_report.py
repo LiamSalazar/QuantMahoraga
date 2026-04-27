@@ -175,6 +175,7 @@ def _build_override_usage_fast(wf: Dict[str, Any], cfg: Mahoraga13Config) -> pd.
                 "OverrideRate": 0.0,
                 "StructuralRate": 0.0,
                 "ContinuationV2Rate": 0.0,
+                "ContinuationReentryRate": 0.0,
                 "MeanDefenseBlend": 0.0,
                 "MeanGate": 1.0,
                 "MeanVolMult": 1.0,
@@ -187,10 +188,61 @@ def _build_override_usage_fast(wf: Dict[str, Any], cfg: Mahoraga13Config) -> pd.
             "OverrideRate": round(float(frame["is_override"].mean()), 4),
             "StructuralRate": round(float(frame["is_structural_override"].mean()), 4),
             "ContinuationV2Rate": round(float(frame["is_continuation_v2"].mean()), 4),
+            "ContinuationReentryRate": round(float(frame.get("is_continuation_reentry", pd.Series(0.0, index=frame.index)).mean()), 4),
             "MeanDefenseBlend": round(float(frame["defense_blend"].mean()), 4),
             "MeanGate": round(float(frame["gate_scale"].mean()), 4),
             "MeanVolMult": round(float(frame["vol_mult"].mean()), 4),
             "MeanExpCap": round(float(frame["exp_cap"].mean()), 4),
+        }
+
+    for result in wf["results"]:
+        fold = int(result["fold"])
+        rows.append(summarize(pd.DataFrame(), f"FOLD_{fold}", fold, cfg.official_baseline_label))
+        for variant in [cfg.main_variant_key, cfg.continuation_variant_key, cfg.combo_variant_key]:
+            frame = result["variant_runs"][variant]["override_daily"].loc[result["test_start"]:result["test_end"]]
+            rows.append(summarize(frame, f"FOLD_{fold}", fold, variant))
+
+    rows.append(summarize(pd.DataFrame(), "STITCHED", 0, cfg.official_baseline_label))
+    for variant in [cfg.main_variant_key, cfg.continuation_variant_key, cfg.combo_variant_key]:
+        rows.append(summarize(wf["stitched_override_daily"][variant], "STITCHED", 0, variant))
+    return pd.DataFrame(rows)
+
+
+def _build_continuation_usage_fast(wf: Dict[str, Any], cfg: Mahoraga13Config) -> pd.DataFrame:
+    rows: List[Dict[str, Any]] = []
+    labels = _variant_label_map(cfg)
+
+    def summarize(frame: pd.DataFrame, segment: str, fold: int, variant: str) -> Dict[str, Any]:
+        if len(frame) == 0:
+            return {
+                "Segment": segment,
+                "Fold": fold,
+                "Variant": labels[variant],
+                "ContinuationLiftRate": 0.0,
+                "ContinuationReentryRate": 0.0,
+                "CompressionValidRate": 0.0,
+                "PauseValidRate": 0.0,
+                "SupportValidRate": 0.0,
+                "BenchmarkValidRate": 0.0,
+                "GuardPassRate": 0.0,
+                "MeanContinuationScore": 0.0,
+                "MeanContinuationP": 0.0,
+                "MeanStructuralScore": 0.0,
+            }
+        return {
+            "Segment": segment,
+            "Fold": fold,
+            "Variant": labels[variant],
+            "ContinuationLiftRate": round(float(frame.get("is_continuation_v2", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "ContinuationReentryRate": round(float(frame.get("is_continuation_reentry", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "CompressionValidRate": round(float(frame.get("continuation_compression_valid", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "PauseValidRate": round(float(frame.get("continuation_pause_valid", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "SupportValidRate": round(float(frame.get("continuation_support_valid", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "BenchmarkValidRate": round(float(frame.get("continuation_benchmark_valid", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "GuardPassRate": round(float(frame.get("continuation_guard_pass", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "MeanContinuationScore": round(float(frame.get("continuation_v2_score", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "MeanContinuationP": round(float(frame.get("continuation_v2_p", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "MeanStructuralScore": round(float(frame.get("structural_score", pd.Series(0.0, index=frame.index)).mean()), 4),
         }
 
     for result in wf["results"]:
@@ -274,16 +326,21 @@ def _build_stitched_comparison_fast(wf: Dict[str, Any], cfg: Mahoraga13Config) -
     return pd.DataFrame(rows)
 
 
+def _build_stitched_test_only_fast(wf: Dict[str, Any], cfg: Mahoraga13Config) -> pd.DataFrame:
+    return _build_stitched_comparison_fast(wf, cfg)
+
+
 def build_fast_report_text(wf: Dict[str, Any], cfg: Mahoraga13Config) -> str:
-    comparison_df = _build_stitched_comparison_fast(wf, cfg)
+    comparison_df = _build_stitched_test_only_fast(wf, cfg)
     fold_df = wf["fold_df"].copy().sort_values("fold")
     floor_ceiling_df = _build_floor_ceiling_summary_fast(wf, cfg)
     ablation_df = _build_ablation_fast_df(wf, cfg)
     override_df = _build_override_usage_fast(wf, cfg)
+    continuation_df = _build_continuation_usage_fast(wf, cfg)
     pq_df = _build_pvalue_qvalue_fast(wf, cfg)
     stitched_pq = pq_df[pq_df["Segment"] == "STITCHED"].copy()
     stitched_override = override_df[override_df["Segment"] == "STITCHED"].copy()
-    trace_df = wf["stitched_test_trace"].copy()
+    stitched_continuation = continuation_df[continuation_df["Segment"] == "STITCHED"].copy()
 
     lines = [
         "MAHORAGA 13 — FAST REPORT",
@@ -294,7 +351,7 @@ def build_fast_report_text(wf: Dict[str, Any], cfg: Mahoraga13Config) -> str:
         f"MAIN BRANCH: {cfg.main_variant_key}",
         f"EXPERIMENTAL BRANCHES: {cfg.continuation_variant_key}, {cfg.combo_variant_key}",
         "",
-        "STITCHED COMPARISON",
+        "STITCHED TEST-ONLY",
         comparison_df.to_string(index=False),
         "",
         "STITCHED P-VALUE / Q-VALUE",
@@ -306,14 +363,14 @@ def build_fast_report_text(wf: Dict[str, Any], cfg: Mahoraga13Config) -> str:
         "STITCHED OVERRIDE USAGE",
         stitched_override.to_string(index=False),
         "",
+        "STITCHED CONTINUATION USAGE",
+        stitched_continuation.to_string(index=False),
+        "",
         "ABLATION (FOLDS + STITCHED)",
         ablation_df.to_string(index=False),
         "",
         "FOLD SUMMARY",
         fold_df.to_string(index=False),
-        "",
-        "STITCHED TEST WINDOW TRACE",
-        trace_df.to_string(index=False),
     ]
     return "\n".join(lines)
 
@@ -321,19 +378,23 @@ def build_fast_report_text(wf: Dict[str, Any], cfg: Mahoraga13Config) -> str:
 def save_fast_outputs(wf: Dict[str, Any], cfg: Mahoraga13Config) -> Dict[str, pd.DataFrame]:
     ensure_dir(cfg.outputs_dir)
     comparison_df = _build_stitched_comparison_fast(wf, cfg)
+    stitched_test_only_df = _build_stitched_test_only_fast(wf, cfg)
     fold_df = wf["fold_df"].copy().sort_values("fold")
     floor_ceiling_df = _build_floor_ceiling_summary_fast(wf, cfg)
     ablation_df = _build_ablation_fast_df(wf, cfg)
     override_df = _build_override_usage_fast(wf, cfg)
+    continuation_df = _build_continuation_usage_fast(wf, cfg)
     pq_df = _build_pvalue_qvalue_fast(wf, cfg)
     selected_df = wf.get("selected_df", pd.DataFrame()).copy()
     support_df = wf.get("support_df", pd.DataFrame()).copy()
 
     comparison_df.to_csv(f"{cfg.outputs_dir}/stitched_comparison_fast.csv", index=False)
+    stitched_test_only_df.to_csv(f"{cfg.outputs_dir}/stitched_test_only_fast.csv", index=False)
     fold_df.to_csv(f"{cfg.outputs_dir}/fold_summary_fast.csv", index=False)
     floor_ceiling_df.to_csv(f"{cfg.outputs_dir}/floor_ceiling_summary_fast.csv", index=False)
     ablation_df.to_csv(f"{cfg.outputs_dir}/ablation_fast.csv", index=False)
     override_df.to_csv(f"{cfg.outputs_dir}/override_usage_fast.csv", index=False)
+    continuation_df.to_csv(f"{cfg.outputs_dir}/continuation_usage_fast.csv", index=False)
     selected_df.to_csv(f"{cfg.outputs_dir}/selected_candidates_fast.csv", index=False)
     support_df.to_csv(f"{cfg.outputs_dir}/selected_config_support_fast.csv", index=False)
     pq_df.to_csv(f"{cfg.outputs_dir}/pvalue_qvalue_fast.csv", index=False)
@@ -343,10 +404,12 @@ def save_fast_outputs(wf: Dict[str, Any], cfg: Mahoraga13Config) -> Dict[str, pd
 
     return {
         "comparison": comparison_df,
+        "stitched_test_only": stitched_test_only_df,
         "fold_df": fold_df,
         "floor_ceiling": floor_ceiling_df,
         "ablation": ablation_df,
         "override_usage": override_df,
+        "continuation_usage": continuation_df,
         "selected_df": selected_df,
         "support_df": support_df,
         "pvalue_qvalue": pq_df,

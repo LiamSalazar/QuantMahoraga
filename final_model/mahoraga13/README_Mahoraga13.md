@@ -13,6 +13,7 @@ The package now has a strict hierarchy:
 3. **Exceptional Overrides Only**
    - `STRUCTURAL_DEFENSE_ONLY` in the main branch
    - `CONTINUATION_V2_ONLY` and `STRUCTURAL_DEFENSE + CONTINUATION_V2` only as experimental branches
+   - continuation is limited to rare `CONTINUATION_LIFT` overrides after valid compression / pause conditions
 4. **Backtest Executor**
    - calibrates compact FAST grids and wider FULL grids without nested parallelism.
 
@@ -37,8 +38,9 @@ The package now has a strict hierarchy:
 - `base_alpha_engine.py`: improved alpha baseline and cached engine paths.
 - `path_structure_features.py`: daily/weekly path descriptors.
 - `structural_defense_model.py`: structural override model.
-- `transition_recovery_model.py`: fast transition/recovery model plus Hawkes transition signal.
-- `override_policy.py`: baseline-first override state machine.
+- `transition_recovery_model.py`: Hawkes transition signal and historical transition/recovery references.
+- `continuation_v2_model.py`: isolated continuation-after-compression label and model selection.
+- `override_policy.py`: baseline-first override state machine with rare `CONTINUATION_LIFT`.
 - `backtest_executor.py`: walk-forward execution, calibration and stitching.
 - `fast_report.py`: compact FAST artifacts.
 - `full_report.py`: audit-heavy FULL artifacts.

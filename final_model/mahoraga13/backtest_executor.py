@@ -454,6 +454,8 @@ def _neutralize_pre_test_override(override_daily: pd.DataFrame, test_start: pd.T
         out.loc[pre_test_mask, "is_structural_override"] = 0.0
         if "is_continuation_v2" in out.columns:
             out.loc[pre_test_mask, "is_continuation_v2"] = 0.0
+        if "is_continuation_reentry" in out.columns:
+            out.loc[pre_test_mask, "is_continuation_reentry"] = 0.0
     return out
 
 
@@ -764,9 +766,11 @@ def _run_single_fold(
         "MainOverrideRate": round(float(main_override["is_override"].mean()), 4),
         "MainStructuralRate": round(float(main_override["is_structural_override"].mean()), 4),
         "ContinuationV2OnlyRate": round(float(cont_override["is_continuation_v2"].mean()), 4),
+        "ContinuationReentryRate": round(float(cont_override.get("is_continuation_reentry", pd.Series(0.0, index=cont_override.index)).mean()), 4),
         "ComboOverrideRate": round(float(combo_override["is_override"].mean()), 4),
         "ComboStructuralRate": round(float(combo_override["is_structural_override"].mean()), 4),
         "ComboContinuationV2Rate": round(float(combo_override["is_continuation_v2"].mean()), 4),
+        "ComboContinuationReentryRate": round(float(combo_override.get("is_continuation_reentry", pd.Series(0.0, index=combo_override.index)).mean()), 4),
         "Base_vs_Legacy_Val_pvalue": round(float(best.get("base_vs_legacy_val_pvalue", 1.0)), 6),
         "Base_vs_Legacy_Val_qvalue": round(float(best.get("base_vs_legacy_val_qvalue", 1.0)), 6),
         "Main_vs_Base_Val_pvalue": round(float(best.get("main_vs_base_val_pvalue", 1.0)), 6),
