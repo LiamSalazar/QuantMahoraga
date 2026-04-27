@@ -177,6 +177,7 @@ def build_weekly_path_dataset(daily_ctx: pd.DataFrame, cfg: Mahoraga13Config) ->
     weekly["corr_release_4w"] = weekly["corr_release_21"].rolling(4).mean().fillna(0.0)
     weekly["breadth_rebound_4w"] = weekly["breadth_change_21"].rolling(4).mean().fillna(0.0)
     weekly["qqq_rebound_2w"] = weekly["qqq_rebound_10d"].rolling(2).mean().fillna(0.0)
+    weekly["base_minus_qqq_2w"] = weekly["base_ret_2w"] - weekly["qqq_ret_2w"]
     weekly["base_minus_qqq_4w"] = weekly["base_ret_4w"] - weekly["qqq_ret_2w"].rolling(2).sum().fillna(0.0)
 
     swing_amp_2w = weekly["base_r"].abs().rolling(2, min_periods=1).sum()

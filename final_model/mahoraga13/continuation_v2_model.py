@@ -34,6 +34,7 @@ CONTINUATION_V2_FEATURES = [
     "qqq_rebound_2w",
     "transition_hawkes_recovery",
     "transition_hawkes_stress",
+    "base_minus_qqq_2w",
 ]
 
 
@@ -61,11 +62,48 @@ def _future_drawdown_change(eq: pd.Series, horizon: int) -> pd.Series:
     return out
 
 
+def _future_positive_share(r: pd.Series, horizon: int) -> pd.Series:
+    out = pd.Series(np.nan, index=r.index, dtype=float)
+    vals = r.fillna(0.0).values
+    for i in range(len(r)):
+        j = min(len(r), i + horizon + 1)
+        if j <= i + 1:
+            continue
+        out.iloc[i] = float(np.mean(vals[i + 1:j] > 0.0))
+    return out
+
+
 def _train_quantile(series: pd.Series, q: float, default: float) -> float:
     s = pd.Series(series, dtype=float).replace([np.inf, -np.inf], np.nan).dropna()
     if len(s) == 0:
         return float(default)
     return float(s.quantile(q))
+
+
+def _ordered_bounds(low: float, high: float, default_span: float = 0.05) -> tuple[float, float]:
+    lo = float(low) if np.isfinite(low) else 0.0
+    hi = float(high) if np.isfinite(high) else lo + default_span
+    if hi <= lo:
+        hi = lo + max(default_span, abs(lo) * 0.05 + 1e-4)
+    return lo, hi
+
+
+def _ramp(series: pd.Series, low: float, high: float) -> pd.Series:
+    lo, hi = _ordered_bounds(low, high)
+    span = max(hi - lo, np.finfo(float).eps)
+    return pd.Series(((pd.Series(series, dtype=float) - lo) / span).clip(0.0, 1.0), index=series.index)
+
+
+def _reverse_ramp(series: pd.Series, low: float, high: float) -> pd.Series:
+    return 1.0 - _ramp(series, low, high)
+
+
+def _band_score(series: pd.Series, low: float, high: float) -> pd.Series:
+    lo, hi = _ordered_bounds(low, high, default_span=0.02)
+    mid = 0.5 * (lo + hi)
+    half_span = max((hi - lo) / 2.0, np.finfo(float).eps)
+    score = 1.0 - (pd.Series(series, dtype=float) - mid).abs() / half_span
+    return pd.Series(score.clip(0.0, 1.0), index=series.index)
 
 
 def augment_continuation_v2_features(weekly_df: pd.DataFrame) -> pd.DataFrame:
@@ -77,6 +115,7 @@ def augment_continuation_v2_features(weekly_df: pd.DataFrame) -> pd.DataFrame:
         "compression_score_4w": pd.Series(0.0, index=out.index),
         "swing_amplitude_vs_net_2w": pd.Series(0.0, index=out.index),
         "swing_amplitude_vs_net_4w": pd.Series(0.0, index=out.index),
+        "base_minus_qqq_2w": out.get("base_ret_2w", pd.Series(0.0, index=out.index)) - out.get("qqq_ret_2w", pd.Series(0.0, index=out.index)),
     }
     for col, default in defaults.items():
         if col not in out.columns:
@@ -98,26 +137,46 @@ def augment_continuation_v2_features(weekly_df: pd.DataFrame) -> pd.DataFrame:
 
 def _guard_thresholds(train_df: pd.DataFrame) -> Dict[str, float]:
     return {
-        "compression_2w_min": _train_quantile(train_df["compression_score_2w"], 0.65, 0.35),
-        "compression_4w_min": _train_quantile(train_df["compression_score_4w"], 0.65, 0.45),
-        "swing_2w_min": _train_quantile(train_df["swing_amplitude_vs_net_2w"], 0.60, 1.2),
-        "swing_4w_min": _train_quantile(train_df["swing_amplitude_vs_net_4w"], 0.60, 1.4),
+        "compression_2w_min": _train_quantile(train_df["compression_score_2w"], 0.55, 0.25),
+        "compression_2w_high": _train_quantile(train_df["compression_score_2w"], 0.80, 0.45),
+        "compression_4w_min": _train_quantile(train_df["compression_score_4w"], 0.55, 0.30),
+        "compression_4w_high": _train_quantile(train_df["compression_score_4w"], 0.80, 0.50),
+        "swing_2w_min": _train_quantile(train_df["swing_amplitude_vs_net_2w"], 0.55, 1.10),
+        "swing_2w_high": _train_quantile(train_df["swing_amplitude_vs_net_2w"], 0.80, 1.60),
+        "swing_4w_min": _train_quantile(train_df["swing_amplitude_vs_net_4w"], 0.55, 1.25),
+        "swing_4w_high": _train_quantile(train_df["swing_amplitude_vs_net_4w"], 0.80, 1.85),
+        "path_eff_2w_low": _train_quantile(train_df["path_efficiency_2w"], 0.20, 0.25),
         "path_eff_2w_max": _train_quantile(train_df["path_efficiency_2w"], 0.45, 0.55),
+        "path_eff_4w_low": _train_quantile(train_df["path_efficiency_4w"], 0.20, 0.30),
         "path_eff_4w_max": _train_quantile(train_df["path_efficiency_4w"], 0.45, 0.60),
         "base_dd_floor": _train_quantile(train_df["base_dd"], 0.20, -0.08),
         "base_dd_cap": _train_quantile(train_df["base_dd"], 0.75, -0.01),
         "base_dd_change_floor": _train_quantile(train_df["base_dd_change_2w"], 0.35, -0.025),
-        "stop_density_cap": _train_quantile(train_df["stop_density_2w"], 0.75, 0.03),
+        "base_dd_change_cap": _train_quantile(train_df["base_dd_change_2w"], 0.70, 0.0),
+        "stop_density_soft": _train_quantile(train_df["stop_density_2w"], 0.55, 0.015),
+        "stop_density_cap": _train_quantile(train_df["stop_density_2w"], 0.80, 0.03),
         "base_ret_1w_support_min": _train_quantile(train_df["base_ret_1w"], 0.55, 0.0),
+        "base_ret_1w_support_high": _train_quantile(train_df["base_ret_1w"], 0.80, 0.02),
         "base_ret_2w_support_min": _train_quantile(train_df["base_ret_2w"], 0.55, 0.0),
+        "base_ret_2w_support_high": _train_quantile(train_df["base_ret_2w"], 0.80, 0.03),
         "stop_release_min": _train_quantile(train_df["stop_release_2w"], 0.55, 0.0),
+        "stop_release_high": _train_quantile(train_df["stop_release_2w"], 0.80, 0.015),
         "breadth_min": _train_quantile(train_df["breadth_rebound_4w"], 0.55, 0.0),
+        "breadth_high": _train_quantile(train_df["breadth_rebound_4w"], 0.80, 0.02),
         "scale_min": _train_quantile(train_df["scale_recovery_2w"], 0.55, 0.0),
+        "scale_high": _train_quantile(train_df["scale_recovery_2w"], 0.80, 0.02),
         "corr_min": _train_quantile(train_df["corr_release_4w"], 0.55, 0.0),
+        "corr_high": _train_quantile(train_df["corr_release_4w"], 0.80, 0.02),
         "qqq_ret_floor": _train_quantile(train_df["qqq_ret_2w"], 0.35, -0.02),
+        "qqq_ret_support": _train_quantile(train_df["qqq_ret_2w"], 0.75, 0.03),
         "qqq_rebound_floor": _train_quantile(train_df["qqq_rebound_2w"], 0.35, 0.0),
+        "qqq_rebound_support": _train_quantile(train_df["qqq_rebound_2w"], 0.75, 0.025),
+        "base_minus_qqq_floor": _train_quantile(train_df["base_minus_qqq_2w"], 0.35, -0.01),
+        "base_minus_qqq_support": _train_quantile(train_df["base_minus_qqq_2w"], 0.75, 0.02),
         "hawkes_recovery_min": _train_quantile(train_df["transition_hawkes_recovery"], 0.55, 0.0),
-        "hawkes_stress_cap": _train_quantile(train_df["transition_hawkes_stress"], 0.75, 1.0),
+        "hawkes_recovery_high": _train_quantile(train_df["transition_hawkes_recovery"], 0.80, 1.0),
+        "hawkes_stress_soft": _train_quantile(train_df["transition_hawkes_stress"], 0.60, 0.8),
+        "hawkes_stress_cap": _train_quantile(train_df["transition_hawkes_stress"], 0.80, 1.2),
     }
 
 
@@ -160,12 +219,71 @@ def _benchmark_ok(df: pd.DataFrame, thresholds: Dict[str, float]) -> pd.Series:
     return (
         (df["qqq_ret_2w"] >= thresholds["qqq_ret_floor"])
         | (df["qqq_rebound_2w"] >= thresholds["qqq_rebound_floor"])
+        | (df["base_minus_qqq_2w"] >= thresholds["base_minus_qqq_floor"])
     )
+
+
+def _build_soft_context_scores(df: pd.DataFrame, thresholds: Dict[str, float]) -> pd.DataFrame:
+    out = pd.DataFrame(index=df.index)
+
+    out["compression_score"] = pd.concat(
+        [
+            _ramp(df["compression_score_2w"], thresholds["compression_2w_min"], thresholds["compression_2w_high"]),
+            _ramp(df["compression_score_4w"], thresholds["compression_4w_min"], thresholds["compression_4w_high"]),
+            _ramp(df["swing_amplitude_vs_net_2w"], thresholds["swing_2w_min"], thresholds["swing_2w_high"]),
+            _ramp(df["swing_amplitude_vs_net_4w"], thresholds["swing_4w_min"], thresholds["swing_4w_high"]),
+            _reverse_ramp(df["path_efficiency_2w"], thresholds["path_eff_2w_low"], thresholds["path_eff_2w_max"]),
+            _reverse_ramp(df["path_efficiency_4w"], thresholds["path_eff_4w_low"], thresholds["path_eff_4w_max"]),
+        ],
+        axis=1,
+    ).mean(axis=1).clip(0.0, 1.0)
+
+    out["pause_score"] = pd.concat(
+        [
+            _band_score(df["base_dd"], thresholds["base_dd_floor"], thresholds["base_dd_cap"]),
+            _ramp(df["base_dd_change_2w"], thresholds["base_dd_change_floor"], thresholds["base_dd_change_cap"]),
+            _reverse_ramp(df["stop_density_2w"], thresholds["stop_density_soft"], thresholds["stop_density_cap"]),
+        ],
+        axis=1,
+    ).mean(axis=1).clip(0.0, 1.0)
+
+    out["support_score"] = pd.concat(
+        [
+            _ramp(df["base_ret_1w"], thresholds["base_ret_1w_support_min"], thresholds["base_ret_1w_support_high"]),
+            _ramp(df["base_ret_2w"], thresholds["base_ret_2w_support_min"], thresholds["base_ret_2w_support_high"]),
+            _ramp(df["stop_release_2w"], thresholds["stop_release_min"], thresholds["stop_release_high"]),
+            _ramp(df["breadth_rebound_4w"], thresholds["breadth_min"], thresholds["breadth_high"]),
+            _ramp(df["scale_recovery_2w"], thresholds["scale_min"], thresholds["scale_high"]),
+            _ramp(df["corr_release_4w"], thresholds["corr_min"], thresholds["corr_high"]),
+            _ramp(df["transition_hawkes_recovery"], thresholds["hawkes_recovery_min"], thresholds["hawkes_recovery_high"]),
+        ],
+        axis=1,
+    ).mean(axis=1).clip(0.0, 1.0)
+
+    out["benchmark_score"] = pd.concat(
+        [
+            _ramp(df["qqq_ret_2w"], thresholds["qqq_ret_floor"], thresholds["qqq_ret_support"]),
+            _ramp(df["qqq_rebound_2w"], thresholds["qqq_rebound_floor"], thresholds["qqq_rebound_support"]),
+            _ramp(df["base_minus_qqq_2w"], thresholds["base_minus_qqq_floor"], thresholds["base_minus_qqq_support"]),
+        ],
+        axis=1,
+    ).mean(axis=1).clip(0.0, 1.0)
+
+    out["stress_score"] = _reverse_ramp(
+        df["transition_hawkes_stress"],
+        thresholds["hawkes_stress_soft"],
+        thresholds["hawkes_stress_cap"],
+    ).clip(0.0, 1.0)
+
+    out["path_state_score"] = out[
+        ["compression_score", "pause_score", "support_score", "benchmark_score", "stress_score"]
+    ].mean(axis=1).clip(0.0, 1.0)
+    return out
 
 
 def evaluate_continuation_v2_context(weekly_df: pd.DataFrame, guard_thresholds: Dict[str, float]) -> pd.DataFrame:
     df = augment_continuation_v2_features(weekly_df)
-    out = pd.DataFrame(index=df.index)
+    out = _build_soft_context_scores(df, guard_thresholds)
     out["compression_valid"] = _compression_recent(df, guard_thresholds).astype(int)
     out["pause_valid"] = _pause_recent(df, guard_thresholds).astype(int)
     out["support_valid"] = _support_now(df, guard_thresholds).astype(int)
@@ -176,46 +294,62 @@ def evaluate_continuation_v2_context(weekly_df: pd.DataFrame, guard_thresholds: 
     return out
 
 
+def compute_continuation_v2_core_score(prob: pd.Series, context: pd.DataFrame) -> pd.Series:
+    p = pd.Series(prob, index=context.index, dtype=float).fillna(0.0).clip(0.0, 1.0)
+    path_state = pd.Series(context["path_state_score"], index=context.index, dtype=float).fillna(0.0).clip(0.0, 1.0)
+    return (0.50 * p + 0.50 * path_state).clip(0.0, 1.0)
+
+
 def annotate_continuation_v2_labels(weekly_df: pd.DataFrame, train_end: pd.Timestamp) -> pd.DataFrame:
     out = augment_continuation_v2_features(weekly_df)
     train_df = out.loc[:train_end].copy()
     thresholds = _guard_thresholds(train_df)
+    context = evaluate_continuation_v2_context(out, thresholds)
 
     fwd2 = _future_compound_return(out["base_r"], 2)
     fwd4 = _future_compound_return(out["base_r"], 4)
     dd2 = _future_drawdown_change(out["base_eq"], 2)
     dd4 = _future_drawdown_change(out["base_eq"], 4)
+    pos4 = _future_positive_share(out["base_r"], 4)
 
     train_idx = train_df.index
     fwd2_min = _train_quantile(fwd2.loc[train_idx], 0.60, 0.01)
     fwd4_min = _train_quantile(fwd4.loc[train_idx], 0.65, 0.015)
+    pos4_min = _train_quantile(pos4.loc[train_idx], 0.60, 0.50)
     dd2_floor = _train_quantile(dd2.loc[train_idx], 0.40, -0.02)
     dd4_floor = _train_quantile(dd4.loc[train_idx], 0.40, -0.03)
-
-    context = evaluate_continuation_v2_context(out, thresholds)
-    compression_recent = context["compression_valid"].astype(bool)
-    pause_recent = context["pause_valid"].astype(bool)
-    support_now = context["support_valid"].astype(bool)
-    benchmark_ok = context["benchmark_valid"].astype(bool)
-    stress_ok = context["stress_ok"].astype(bool)
-    structural_ok = ~pd.Series(out.get("structural_y", 0.0), index=out.index, dtype=float).fillna(0.0).astype(bool)
+    path_state_floor = _train_quantile(context.loc[train_idx, "path_state_score"], 0.60, 0.45)
+    support_floor = _train_quantile(context.loc[train_idx, "support_score"], 0.55, 0.35)
+    pause_floor = _train_quantile(context.loc[train_idx, "pause_score"], 0.50, 0.40)
 
     future_ret_ok = (fwd2 >= fwd2_min) | (fwd4 >= fwd4_min)
+    persistence_ok = (fwd4 >= fwd4_min) & (pos4 >= pos4_min)
     future_dd_ok = (dd2 >= dd2_floor) & (dd4 >= dd4_floor)
+    soft_context_ok = (
+        (context["path_state_score"] >= path_state_floor)
+        & (context["support_score"] >= support_floor)
+        & (context["pause_score"] >= pause_floor)
+    )
 
     out["continuation_compression_valid"] = context["compression_valid"]
     out["continuation_pause_valid"] = context["pause_valid"]
     out["continuation_support_valid"] = context["support_valid"]
     out["continuation_benchmark_valid"] = context["benchmark_valid"]
+    out["continuation_compression_score"] = context["compression_score"]
+    out["continuation_pause_score"] = context["pause_score"]
+    out["continuation_support_score"] = context["support_score"]
+    out["continuation_benchmark_score"] = context["benchmark_score"]
+    out["continuation_stress_score"] = context["stress_score"]
+    out["continuation_path_state_score"] = context["path_state_score"]
 
     out["continuation_y"] = (
-        compression_recent
-        & pause_recent
-        & support_now
-        & benchmark_ok
-        & stress_ok
-        & structural_ok
+        context["compression_valid"].astype(bool)
+        & context["pause_valid"].astype(bool)
+        & context["benchmark_valid"].astype(bool)
+        & context["stress_ok"].astype(bool)
+        & soft_context_ok
         & future_ret_ok
+        & persistence_ok
         & future_dd_ok
     ).astype(int)
     out["continuation_v2_y"] = out["continuation_y"]
@@ -296,12 +430,12 @@ def _validation_entry_threshold(model_info: Dict[str, Any], train_df: pd.DataFra
     candidate_values = [
         floor,
         cap,
-        float(pos_probs.quantile(0.40)),
+        float(pos_probs.quantile(0.35)),
+        float(pos_probs.quantile(0.45)),
         float(pos_probs.median()),
-        float(probs.quantile(0.70)),
-        float(probs.quantile(0.75)),
+        float(probs.quantile(0.65)),
+        float(probs.quantile(0.72)),
         float(probs.quantile(0.80)),
-        float(probs.quantile(0.85)),
     ]
     if len(neg_probs):
         candidate_values.extend([float(neg_probs.quantile(0.80)), float(neg_probs.quantile(0.85))])
@@ -318,10 +452,10 @@ def _validation_entry_threshold(model_info: Dict[str, Any], train_df: pd.DataFra
 
         precision = float(y_va.loc[chosen].mean())
         recall = float(((chosen) & (y_va == 1)).sum() / max(1, positive_count))
-        utility = precision + 0.25 * recall
-        utility -= 0.60 * max(0.0, rate - float(cfg.continuation_v2_rate_cap))
-        utility -= 0.18 * max(0.0, float(cfg.continuation_v2_target_rate) - rate)
-        utility -= 0.10 * max(0.0, float(cfg.continuation_v2_min_rate) - rate)
+        utility = precision + 0.30 * recall
+        utility -= 0.55 * max(0.0, rate - float(cfg.continuation_v2_rate_cap))
+        utility -= 0.25 * max(0.0, float(cfg.continuation_v2_target_rate) - rate)
+        utility -= 0.15 * max(0.0, float(cfg.continuation_v2_min_rate) - rate)
 
         if utility > best_utility:
             best_utility = utility
@@ -347,6 +481,24 @@ def fit_continuation_v2_model(train_weekly: pd.DataFrame, cfg: Mahoraga13Config,
     model_info["entry_threshold"] = _validation_entry_threshold(model_info, train_df, cfg)
     model_info["guard_thresholds"] = _guard_thresholds(train_df)
     model_info["feature_cols"] = list(CONTINUATION_V2_FEATURES)
+
+    train_context = evaluate_continuation_v2_context(train_df, model_info["guard_thresholds"])
+    train_prob = apply_continuation_v2_model(model_info, train_df)
+    core_score = compute_continuation_v2_core_score(train_prob, train_context)
+    score_ceiling = _train_quantile(train_prob, 0.85, max(model_info["entry_threshold"], 0.25))
+    pressure_floor = _train_quantile(core_score, cfg.continuation_v2_pressure_floor_quantile, 0.35)
+    pressure_ceiling = _train_quantile(core_score, cfg.continuation_v2_pressure_ceiling_quantile, 0.55)
+    pressure_floor, pressure_ceiling = _ordered_bounds(pressure_floor, pressure_ceiling, default_span=0.05)
+
+    model_info["score_ceiling"] = float(max(model_info["entry_threshold"], score_ceiling))
+    model_info["pressure_floor"] = float(pressure_floor)
+    model_info["pressure_ceiling"] = float(pressure_ceiling)
+    model_info["path_state_soft_floor"] = float(
+        _train_quantile(train_context["path_state_score"], cfg.continuation_v2_path_state_floor_quantile, 0.45)
+    )
+    model_info["benchmark_soft_floor"] = float(
+        _train_quantile(train_context["benchmark_score"], cfg.continuation_v2_benchmark_floor_quantile, 0.35)
+    )
     return model_info
 
 

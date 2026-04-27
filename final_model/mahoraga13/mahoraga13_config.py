@@ -59,13 +59,27 @@ class Mahoraga13Config(m6.Mahoraga6Config):
     # Experimental continuation_v2 guard rails.
     continuation_v2_entry_floor: float = 0.10
     continuation_v2_entry_cap: float = 0.40
-    continuation_v2_target_rate: float = 0.05
-    continuation_v2_min_rate: float = 0.01
-    continuation_v2_rate_cap: float = 0.10
+    continuation_v2_target_rate: float = 0.08
+    continuation_v2_min_rate: float = 0.02
+    continuation_v2_rate_cap: float = 0.14
     continuation_v2_structural_margin: float = 0.06
-    continuation_v2_gate: float = 1.03
-    continuation_v2_vol_mult: float = 1.04
-    continuation_v2_exp_cap: float = 1.05
+    continuation_v2_gate: float = 1.05
+    continuation_v2_vol_mult: float = 1.06
+    continuation_v2_exp_cap: float = 1.08
+    continuation_v2_pressure_floor_quantile: float = 0.60
+    continuation_v2_pressure_ceiling_quantile: float = 0.85
+    continuation_v2_path_state_floor_quantile: float = 0.55
+    continuation_v2_benchmark_floor_quantile: float = 0.35
+
+    # Post-run hard selection checks.
+    hard_fold4_sharpe_tol: float = -0.03
+    hard_ceiling_mean_sharpe_tol: float = -0.03
+    hard_fold3_vs_main_tol: float = -0.02
+    hard_fold5_sharpe_min_delta: float = 0.0
+    hard_reentry_rate_min: float = 0.005
+    hard_override_rate_abs_cap: float = 0.32
+    hard_override_rate_buffer: float = 0.10
+    promising_stitched_sharpe_delta: float = 0.005
 
     # Alpha design.
     residual_beta_window: int = 63

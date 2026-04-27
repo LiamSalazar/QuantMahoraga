@@ -13,7 +13,7 @@ The package now has a strict hierarchy:
 3. **Exceptional Overrides Only**
    - `STRUCTURAL_DEFENSE_ONLY` in the main branch
    - `CONTINUATION_V2_ONLY` and `STRUCTURAL_DEFENSE + CONTINUATION_V2` only as experimental branches
-   - continuation is limited to rare `CONTINUATION_LIFT` overrides after valid compression / pause conditions
+   - continuation uses a smooth `CONTINUATION_LIFT` driven by path-state / continuation-pressure after valid compression / pause conditions
 4. **Backtest Executor**
    - calibrates compact FAST grids and wider FULL grids without nested parallelism.
 
@@ -40,7 +40,7 @@ The package now has a strict hierarchy:
 - `structural_defense_model.py`: structural override model.
 - `transition_recovery_model.py`: Hawkes transition signal and historical transition/recovery references.
 - `continuation_v2_model.py`: isolated continuation-after-compression label and model selection.
-- `override_policy.py`: baseline-first override state machine with rare `CONTINUATION_LIFT`.
+- `override_policy.py`: baseline-first override state machine with structural priority and auditable continuation pressure.
 - `backtest_executor.py`: walk-forward execution, calibration and stitching.
 - `fast_report.py`: compact FAST artifacts.
 - `full_report.py`: audit-heavy FULL artifacts.
@@ -60,5 +60,6 @@ python mahoraga13_runner.py
 - Outputs are generated only at runtime.
 - Expensive alpha path work is cached once per unique engine candidate.
 - Policy sweeps reuse candidate-specific probabilities and path features instead of recomputing the full alpha path.
+- FAST only fits continuation labels when the continuation branch is actually needed, so main-branch calibration stays compact.
 
 

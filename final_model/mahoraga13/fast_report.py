@@ -227,6 +227,11 @@ def _build_continuation_usage_fast(wf: Dict[str, Any], cfg: Mahoraga13Config) ->
                 "GuardPassRate": 0.0,
                 "MeanContinuationScore": 0.0,
                 "MeanContinuationP": 0.0,
+                "MeanPathStateScore": 0.0,
+                "MeanContinuationPressure": 0.0,
+                "MeanStructuralHeadroom": 0.0,
+                "MeanSoftIntensity": 0.0,
+                "MeanBenchmarkScore": 0.0,
                 "MeanStructuralScore": 0.0,
             }
         return {
@@ -242,6 +247,11 @@ def _build_continuation_usage_fast(wf: Dict[str, Any], cfg: Mahoraga13Config) ->
             "GuardPassRate": round(float(frame.get("continuation_guard_pass", pd.Series(0.0, index=frame.index)).mean()), 4),
             "MeanContinuationScore": round(float(frame.get("continuation_v2_score", pd.Series(0.0, index=frame.index)).mean()), 4),
             "MeanContinuationP": round(float(frame.get("continuation_v2_p", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "MeanPathStateScore": round(float(frame.get("continuation_path_state_score", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "MeanContinuationPressure": round(float(frame.get("continuation_pressure", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "MeanStructuralHeadroom": round(float(frame.get("continuation_structural_headroom", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "MeanSoftIntensity": round(float(frame.get("continuation_soft_intensity", pd.Series(0.0, index=frame.index)).mean()), 4),
+            "MeanBenchmarkScore": round(float(frame.get("continuation_benchmark_score", pd.Series(0.0, index=frame.index)).mean()), 4),
             "MeanStructuralScore": round(float(frame.get("structural_score", pd.Series(0.0, index=frame.index)).mean()), 4),
         }
 
@@ -258,9 +268,106 @@ def _build_continuation_usage_fast(wf: Dict[str, Any], cfg: Mahoraga13Config) ->
     return pd.DataFrame(rows)
 
 
+def _variant_hard_selection_fast(wf: Dict[str, Any], cfg: Mahoraga13Config) -> Dict[str, Dict[str, Any]]:
+    fold_df = wf["fold_df"].copy().sort_values("fold")
+    labels = _variant_label_map(cfg)
+    stitched_df = _build_stitched_comparison_fast(wf, cfg)
+    override_df = _build_override_usage_fast(wf, cfg)
+    stitched_map = stitched_df.set_index("Variant") if len(stitched_df) else pd.DataFrame()
+    override_map = override_df[override_df["Segment"] == "STITCHED"].set_index("Variant") if len(override_df) else pd.DataFrame()
+
+    def fold_value(fold: int, col: str, default: float = 0.0) -> float:
+        subset = fold_df.loc[fold_df["fold"] == fold, col]
+        return float(subset.iloc[0]) if len(subset) else float(default)
+
+    def stitched_value(label: str, col: str, default: float = 0.0) -> float:
+        if isinstance(stitched_map, pd.DataFrame) and label in stitched_map.index and col in stitched_map.columns:
+            return float(stitched_map.loc[label, col])
+        return float(default)
+
+    def override_value(label: str, col: str, default: float = 0.0) -> float:
+        if isinstance(override_map, pd.DataFrame) and label in override_map.index and col in override_map.columns:
+            return float(override_map.loc[label, col])
+        return float(default)
+
+    base_label = labels[cfg.official_baseline_label]
+    main_label = labels[cfg.main_variant_key]
+    base_ceiling_mean = float(fold_df.loc[fold_df["fold"].isin(cfg.ceiling_folds), "BASE_Sharpe"].mean()) if len(fold_df) else 0.0
+    main_fold3 = fold_value(3, "MAIN_Sharpe")
+    base_fold5 = fold_value(5, "BASE_Sharpe")
+    main_override_rate = override_value(main_label, "OverrideRate")
+    override_cap = max(float(cfg.hard_override_rate_abs_cap), main_override_rate + float(cfg.hard_override_rate_buffer))
+    base_stitched_sharpe = stitched_value(base_label, "Sharpe")
+
+    statuses: Dict[str, Dict[str, Any]] = {
+        cfg.historical_benchmark_label: {"status": "HISTORICAL_ONLY", "notes": "benchmark_only", "stitched_delta": stitched_value(labels[cfg.historical_benchmark_label], "Sharpe") - base_stitched_sharpe},
+        cfg.official_baseline_label: {"status": "OFFICIAL_BASELINE", "notes": "official_baseline", "stitched_delta": 0.0},
+    }
+
+    variants = {
+        cfg.main_variant_key: "MAIN_Sharpe",
+        cfg.continuation_variant_key: "CONT_V2_Sharpe",
+        cfg.combo_variant_key: "COMBO_Sharpe",
+    }
+    for variant, col in variants.items():
+        label = labels[variant]
+        reasons: List[str] = []
+        fold4_delta = fold_value(4, col) - fold_value(4, "BASE_Sharpe")
+        ceiling_delta = (
+            float(fold_df.loc[fold_df["fold"].isin(cfg.ceiling_folds), col].mean()) - base_ceiling_mean
+            if len(fold_df)
+            else 0.0
+        )
+        fold3_value = fold_value(3, col)
+        fold5_delta = fold_value(5, col) - base_fold5
+        reentry_rate = override_value(label, "ContinuationReentryRate")
+        override_rate = override_value(label, "OverrideRate")
+        stitched_delta = stitched_value(label, "Sharpe") - base_stitched_sharpe
+
+        if fold4_delta < float(cfg.hard_fold4_sharpe_tol):
+            reasons.append("fold4_degradation")
+        if ceiling_delta < float(cfg.hard_ceiling_mean_sharpe_tol):
+            reasons.append("ceiling_mean_degradation")
+
+        if variant == cfg.main_variant_key:
+            if fold3_value < fold_value(3, "BASE_Sharpe"):
+                reasons.append("fold3_lost_structural_gain")
+            if stitched_delta < 0.0:
+                reasons.append("stitched_below_base")
+            status = "MAIN_BRANCH_PASS" if not reasons else "MAIN_BRANCH_FAIL"
+        else:
+            if fold3_value < main_fold3 + float(cfg.hard_fold3_vs_main_tol):
+                reasons.append("fold3_below_main")
+            if fold5_delta <= float(cfg.hard_fold5_sharpe_min_delta):
+                reasons.append("fold5_no_improvement")
+            if reentry_rate <= float(cfg.hard_reentry_rate_min):
+                reasons.append("reentry_near_zero")
+            if override_rate > override_cap:
+                reasons.append("override_rate_spike")
+            if not reasons and stitched_delta >= float(cfg.promising_stitched_sharpe_delta):
+                status = "PROMISING"
+            elif not reasons:
+                status = "PASS_NOT_PROMISING"
+            else:
+                status = "REJECT"
+
+        statuses[variant] = {
+            "status": status,
+            "notes": "ok" if not reasons else ";".join(reasons),
+            "stitched_delta": round(stitched_delta, 4),
+            "override_rate": round(override_rate, 4),
+            "reentry_rate": round(reentry_rate, 4),
+            "fold4_delta": round(fold4_delta, 4),
+            "ceiling_delta": round(ceiling_delta, 4),
+            "fold5_delta": round(fold5_delta, 4),
+        }
+    return statuses
+
+
 def _build_floor_ceiling_summary_fast(wf: Dict[str, Any], cfg: Mahoraga13Config) -> pd.DataFrame:
     fold_df = wf["fold_df"].copy().sort_values("fold")
     labels = _variant_label_map(cfg)
+    hard_status = _variant_hard_selection_fast(wf, cfg)
     sharpe_cols = {
         cfg.historical_benchmark_label: "LEGACY_Sharpe",
         cfg.official_baseline_label: "BASE_Sharpe",
@@ -282,6 +389,7 @@ def _build_floor_ceiling_summary_fast(wf: Dict[str, Any], cfg: Mahoraga13Config)
         floor_mean = float(fold_df.loc[fold_df["fold"].isin(cfg.floor_folds), col].mean()) if len(fold_df) else 0.0
         fold5 = float(fold_df.loc[fold_df["fold"] == 5, col].iloc[0]) if (fold_df["fold"] == 5).any() else 0.0
         stitched_sharpe = _summary_from_stitched(stitched_map[variant], cfg, variant)["Sharpe"]
+        status_info = hard_status.get(variant, {})
         rows.append(
             {
                 "Variant": labels[variant],
@@ -292,6 +400,9 @@ def _build_floor_ceiling_summary_fast(wf: Dict[str, Any], cfg: Mahoraga13Config)
                 "Fold5Sharpe": round(fold5, 4),
                 "Fold5DeltaVsBase": round(fold5 - fold5_base, 4),
                 "StitchedSharpe": round(stitched_sharpe, 4),
+                "StitchedSharpeDeltaVsBase": round(float(status_info.get("stitched_delta", stitched_sharpe - _summary_from_stitched(stitched_map[cfg.official_baseline_label], cfg, cfg.official_baseline_label)["Sharpe"])), 4),
+                "HardSelectionStatus": status_info.get("status", "N/A"),
+                "HardSelectionNotes": status_info.get("notes", "n/a"),
             }
         )
     return pd.DataFrame(rows)

@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 
-from continuation_v2_model import evaluate_continuation_v2_context
+from continuation_v2_model import compute_continuation_v2_core_score, evaluate_continuation_v2_context
 from mahoraga13_config import Mahoraga13Config
 from mahoraga13_utils import iter_grid, sigmoid
 
@@ -33,6 +33,18 @@ def _variant_flags(variant: str) -> Dict[str, bool]:
     raise ValueError(f"Unknown override variant: {variant}")
 
 
+def _ramp_value(value: float, low: float, high: float) -> float:
+    lo = float(low)
+    hi = float(high)
+    if not np.isfinite(lo):
+        lo = 0.0
+    if not np.isfinite(hi):
+        hi = lo + 0.05
+    if hi <= lo:
+        hi = lo + max(0.05, abs(lo) * 0.05 + 1e-4)
+    return float(np.clip((float(value) - lo) / (hi - lo), 0.0, 1.0))
+
+
 def build_override_weekly(
     weekly_df: pd.DataFrame,
     policy_params: Dict[str, float],
@@ -48,10 +60,6 @@ def build_override_weekly(
 
     stress_hawkes = _normalize_signal(out.get("transition_hawkes_stress", pd.Series(0.0, index=out.index)))
     recovery_hawkes = _normalize_signal(out.get("transition_hawkes_recovery", pd.Series(0.0, index=out.index)))
-    hawkes_release = _normalize_signal(
-        out.get("transition_hawkes_recovery", pd.Series(0.0, index=out.index))
-        - 0.5 * out.get("transition_hawkes_stress", pd.Series(0.0, index=out.index))
-    )
     continuation_p = pd.Series(
         out.get("continuation_v2_p", pd.Series(0.0, index=out.index)),
         index=out.index,
@@ -68,6 +76,12 @@ def build_override_weekly(
                 "support_valid": 0.0,
                 "benchmark_valid": 0.0,
                 "stress_ok": 0.0,
+                "compression_score": 0.0,
+                "pause_score": 0.0,
+                "support_score": 0.0,
+                "benchmark_score": 0.0,
+                "stress_score": 0.0,
+                "path_state_score": 0.0,
             },
             index=out.index,
         )
@@ -87,35 +101,7 @@ def build_override_weekly(
         index=out.index,
     ).clip(0.0, 1.0)
 
-    compression_path = pd.concat(
-        [
-            _normalize_signal(1.0 - out.get("path_efficiency_2w", pd.Series(0.0, index=out.index))).rename("path_efficiency_2w"),
-            _normalize_signal(1.0 - out.get("path_efficiency_4w", pd.Series(0.0, index=out.index))).rename("path_efficiency_4w"),
-            _normalize_signal(out.get("swing_amplitude_vs_net_2w", pd.Series(0.0, index=out.index))).rename("swing_amplitude_vs_net_2w"),
-            _normalize_signal(out.get("swing_amplitude_vs_net_4w", pd.Series(0.0, index=out.index))).rename("swing_amplitude_vs_net_4w"),
-            _normalize_signal(out.get("compression_score_2w", pd.Series(0.0, index=out.index))).rename("compression_score_2w"),
-            _normalize_signal(out.get("compression_score_4w", pd.Series(0.0, index=out.index))).rename("compression_score_4w"),
-        ],
-        axis=1,
-    ).mean(axis=1).clip(0.0, 1.0)
-    support_path = pd.concat(
-        [
-            _normalize_signal(out.get("base_ret_1w", pd.Series(0.0, index=out.index))).rename("base_ret_1w"),
-            _normalize_signal(out.get("base_ret_2w", pd.Series(0.0, index=out.index))).rename("base_ret_2w"),
-            _normalize_signal(out.get("stop_release_2w", pd.Series(0.0, index=out.index))).rename("stop_release_2w"),
-            _normalize_signal(out.get("breadth_rebound_4w", pd.Series(0.0, index=out.index))).rename("breadth_rebound_4w"),
-            _normalize_signal(out.get("scale_recovery_2w", pd.Series(0.0, index=out.index))).rename("scale_recovery_2w"),
-            _normalize_signal(out.get("corr_release_4w", pd.Series(0.0, index=out.index))).rename("corr_release_4w"),
-            _normalize_signal(out.get("qqq_ret_2w", pd.Series(0.0, index=out.index))).rename("qqq_ret_2w"),
-            _normalize_signal(out.get("qqq_rebound_2w", pd.Series(0.0, index=out.index))).rename("qqq_rebound_2w"),
-            hawkes_release.rename("hawkes_release"),
-        ],
-        axis=1,
-    ).mean(axis=1).clip(0.0, 1.0)
-    continuation_path = (0.55 * compression_path + 0.45 * support_path).clip(0.0, 1.0)
-
     out["structural_path_score"] = structural_path
-    out["continuation_v2_path_score"] = continuation_path
     out["stress_hawkes_norm"] = stress_hawkes
     out["recovery_hawkes_norm"] = recovery_hawkes
     out["continuation_v2_p"] = continuation_p
@@ -124,19 +110,38 @@ def build_override_weekly(
     out["continuation_support_valid"] = pd.Series(context["support_valid"], index=out.index, dtype=float).fillna(0.0)
     out["continuation_benchmark_valid"] = pd.Series(context["benchmark_valid"], index=out.index, dtype=float).fillna(0.0)
     out["continuation_stress_ok"] = pd.Series(context["stress_ok"], index=out.index, dtype=float).fillna(0.0)
+    out["continuation_compression_score"] = pd.Series(context["compression_score"], index=out.index, dtype=float).fillna(0.0)
+    out["continuation_pause_score"] = pd.Series(context["pause_score"], index=out.index, dtype=float).fillna(0.0)
+    out["continuation_support_score"] = pd.Series(context["support_score"], index=out.index, dtype=float).fillna(0.0)
+    out["continuation_benchmark_score"] = pd.Series(context["benchmark_score"], index=out.index, dtype=float).fillna(0.0)
+    out["continuation_stress_score"] = pd.Series(context["stress_score"], index=out.index, dtype=float).fillna(0.0)
+    out["continuation_path_state_score"] = pd.Series(context["path_state_score"], index=out.index, dtype=float).fillna(0.0)
+
     out["structural_score"] = (
         0.74 * pd.Series(out.get("structural_p", 0.0), index=out.index, dtype=float).fillna(0.0)
         + 0.22 * out["structural_path_score"]
         + 0.04 * hawkes_weight * stress_hawkes
     ).clip(0.0, 1.0)
-    out["continuation_v2_score"] = (
-        0.78 * continuation_p
-        + 0.22 * continuation_path
-    ).clip(0.0, 1.0)
+    out["continuation_v2_score"] = compute_continuation_v2_core_score(continuation_p, context).clip(0.0, 1.0)
 
     structural_enter = float(policy_params["structural_enter_thr"])
     structural_exit = max(0.46, structural_enter - 0.12)
     continuation_enter = float(continuation_v2_info.get("entry_threshold", 1.01))
+    score_ceiling = float(continuation_v2_info.get("score_ceiling", max(continuation_enter + 0.05, 1.0)))
+    pressure_floor = float(continuation_v2_info.get("pressure_floor", continuation_enter))
+    pressure_ceiling = float(continuation_v2_info.get("pressure_ceiling", max(pressure_floor + 0.05, 1.0)))
+    path_state_soft_floor = float(continuation_v2_info.get("path_state_soft_floor", 1.01))
+    benchmark_soft_floor = float(continuation_v2_info.get("benchmark_soft_floor", 1.01))
+
+    headroom_span = max(cfg.continuation_v2_structural_margin + 0.04, 0.08)
+    out["continuation_structural_headroom"] = (
+        (structural_enter - out["structural_score"]) / headroom_span
+    ).clip(0.0, 1.0)
+    out["continuation_pressure"] = (
+        0.70 * out["continuation_v2_score"]
+        + 0.15 * out["continuation_structural_headroom"]
+        + 0.15 * out["continuation_benchmark_score"]
+    ).clip(0.0, 1.0)
 
     out["override_type"] = "BASELINE"
     out["override_detail"] = "BASELINE"
@@ -149,6 +154,7 @@ def build_override_weekly(
     out["is_continuation_v2"] = 0.0
     out["is_continuation_reentry"] = 0.0
     out["continuation_guard_pass"] = 0.0
+    out["continuation_soft_intensity"] = 0.0
 
     structural_on = False
     for dt in out.index:
@@ -180,29 +186,41 @@ def build_override_weekly(
             out.loc[dt, "exp_cap"] = float(policy_params["structural_exp_cap"])
             out.loc[dt, "is_override"] = 1.0
             out.loc[dt, "is_structural_override"] = 1.0
+            out.loc[dt, "continuation_structural_headroom"] = 0.0
+            out.loc[dt, "continuation_pressure"] = 0.0
             continue
 
-        continuation_guard = (
+        soft_candidate = (
             flags["allow_continuation_v2"]
             and bool(row["continuation_compression_valid"] > 0.0)
-            and bool(row["continuation_pause_valid"] > 0.0)
-            and bool(row["continuation_support_valid"] > 0.0)
-            and bool(row["continuation_benchmark_valid"] > 0.0)
+            and bool(row["continuation_benchmark_score"] >= benchmark_soft_floor)
+            and bool(row["continuation_path_state_score"] >= path_state_soft_floor)
+            and bool(row["continuation_structural_headroom"] > 0.0)
             and bool(row["continuation_stress_ok"] > 0.0)
+        )
+        hard_guard = (
+            soft_candidate
             and (row["continuation_v2_score"] >= continuation_enter)
             and (row["structural_score"] <= structural_enter - cfg.continuation_v2_structural_margin)
         )
-        out.loc[dt, "continuation_guard_pass"] = float(continuation_guard)
-        if continuation_guard:
+        soft_intensity = 0.0
+        if soft_candidate and row["continuation_pressure"] >= pressure_floor:
+            soft_intensity = _ramp_value(row["continuation_pressure"], pressure_floor, pressure_ceiling)
+        if hard_guard:
+            soft_intensity = max(soft_intensity, _ramp_value(row["continuation_v2_score"], continuation_enter, score_ceiling))
+
+        out.loc[dt, "continuation_guard_pass"] = float(hard_guard)
+        out.loc[dt, "continuation_soft_intensity"] = float(soft_intensity)
+        if soft_intensity > 0.0:
             out.loc[dt, "override_type"] = "CONTINUATION_LIFT"
             out.loc[dt, "override_detail"] = "CONTINUATION_LIFT"
             out.loc[dt, "defense_blend"] = 0.0
-            out.loc[dt, "gate_scale"] = float(cfg.continuation_v2_gate)
-            out.loc[dt, "vol_mult"] = float(cfg.continuation_v2_vol_mult)
-            out.loc[dt, "exp_cap"] = float(cfg.continuation_v2_exp_cap)
+            out.loc[dt, "gate_scale"] = 1.0 + max(0.0, float(cfg.continuation_v2_gate) - 1.0) * soft_intensity
+            out.loc[dt, "vol_mult"] = 1.0 + max(0.0, float(cfg.continuation_v2_vol_mult) - 1.0) * soft_intensity
+            out.loc[dt, "exp_cap"] = 1.0 + max(0.0, float(cfg.continuation_v2_exp_cap) - 1.0) * soft_intensity
             out.loc[dt, "is_override"] = 1.0
             out.loc[dt, "is_continuation_v2"] = 1.0
-            out.loc[dt, "is_continuation_reentry"] = 1.0
+            out.loc[dt, "is_continuation_reentry"] = float(hard_guard)
 
     return out
 
@@ -221,6 +239,9 @@ def weekly_to_daily_override(override_weekly: pd.DataFrame, idx: pd.DatetimeInde
         "is_continuation_reentry",
         "structural_score",
         "continuation_v2_score",
+        "continuation_pressure",
+        "continuation_structural_headroom",
+        "continuation_soft_intensity",
         "structural_p",
         "continuation_v2_p",
         "continuation_compression_valid",
@@ -228,6 +249,12 @@ def weekly_to_daily_override(override_weekly: pd.DataFrame, idx: pd.DatetimeInde
         "continuation_support_valid",
         "continuation_benchmark_valid",
         "continuation_stress_ok",
+        "continuation_compression_score",
+        "continuation_pause_score",
+        "continuation_support_score",
+        "continuation_benchmark_score",
+        "continuation_stress_score",
+        "continuation_path_state_score",
         "continuation_guard_pass",
     ]
     out = override_weekly[cols].reindex(idx).ffill()
@@ -244,6 +271,9 @@ def weekly_to_daily_override(override_weekly: pd.DataFrame, idx: pd.DatetimeInde
     for col in [
         "structural_score",
         "continuation_v2_score",
+        "continuation_pressure",
+        "continuation_structural_headroom",
+        "continuation_soft_intensity",
         "structural_p",
         "continuation_v2_p",
         "continuation_compression_valid",
@@ -251,6 +281,12 @@ def weekly_to_daily_override(override_weekly: pd.DataFrame, idx: pd.DatetimeInde
         "continuation_support_valid",
         "continuation_benchmark_valid",
         "continuation_stress_ok",
+        "continuation_compression_score",
+        "continuation_pause_score",
+        "continuation_support_score",
+        "continuation_benchmark_score",
+        "continuation_stress_score",
+        "continuation_path_state_score",
         "continuation_guard_pass",
     ]:
         out[col] = out[col].fillna(0.0)

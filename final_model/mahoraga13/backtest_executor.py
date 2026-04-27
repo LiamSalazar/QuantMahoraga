@@ -27,7 +27,6 @@ from structural_defense_model import (
     fit_structural_defense_model,
 )
 from continuation_v2_model import (
-    annotate_continuation_v2_labels,
     apply_continuation_v2_model,
     fit_continuation_v2_model,
 )
@@ -511,7 +510,6 @@ def _prepare_weekly_candidate_frame(
     hawkes, thresholds = build_hawkes_transition_features(weekly, cfg, thresholds=hawkes_thresholds)
     weekly = weekly.join(hawkes, how="left")
     weekly = annotate_structural_labels(weekly, train_end)
-    weekly = annotate_continuation_v2_labels(weekly, train_end)
     return weekly, thresholds
 
 
@@ -763,6 +761,10 @@ def _run_single_fold(
         "StructuralModel": structural_fit["name"],
         "ContinuationV2Model": continuation_v2_fit["name"],
         "ContinuationV2EntryThreshold": round(float(continuation_v2_fit.get("entry_threshold", np.nan)), 4),
+        "ContinuationV2PressureFloor": round(float(continuation_v2_fit.get("pressure_floor", np.nan)), 4),
+        "ContinuationV2PressureCeiling": round(float(continuation_v2_fit.get("pressure_ceiling", np.nan)), 4),
+        "ContinuationV2PathStateFloor": round(float(continuation_v2_fit.get("path_state_soft_floor", np.nan)), 4),
+        "ContinuationV2BenchmarkFloor": round(float(continuation_v2_fit.get("benchmark_soft_floor", np.nan)), 4),
         "MainOverrideRate": round(float(main_override["is_override"].mean()), 4),
         "MainStructuralRate": round(float(main_override["is_structural_override"].mean()), 4),
         "ContinuationV2OnlyRate": round(float(cont_override["is_continuation_v2"].mean()), 4),
@@ -794,6 +796,10 @@ def _run_single_fold(
         "StructuralModel": structural_fit["name"],
         "ContinuationV2Model": continuation_v2_fit["name"],
         "ContinuationV2EntryThreshold": continuation_v2_fit.get("entry_threshold", np.nan),
+        "ContinuationV2PressureFloor": continuation_v2_fit.get("pressure_floor", np.nan),
+        "ContinuationV2PressureCeiling": continuation_v2_fit.get("pressure_ceiling", np.nan),
+        "ContinuationV2PathStateFloor": continuation_v2_fit.get("path_state_soft_floor", np.nan),
+        "ContinuationV2BenchmarkFloor": continuation_v2_fit.get("benchmark_soft_floor", np.nan),
         **{k: best.get(k) for k in list(cfg_fold.engine_grid().keys()) + list(cfg_fold.policy_grid().keys())},
         "utility": best.get("utility", np.nan),
         "base_vs_legacy_val_pvalue": best.get("base_vs_legacy_val_pvalue", np.nan),
