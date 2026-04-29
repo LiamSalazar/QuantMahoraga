@@ -1,0 +1,19 @@
+\begin{table}[H]
+\centering
+\caption{Resumen de auditoria FULL para stitched y MaxDD. Todas las variantes pasan integridad de stitched, reconstruccion de equity y recomputacion independiente de drawdown.}
+\label{tab:audit-integrity-maxdd}
+\begin{tabular}{lccc}
+\toprule
+Chequeo & Resultado & Detalle principal & Implicacion \\
+\midrule
+Ventanas stitched & PASS & solo segmentos TEST\_ONLY & no hay contaminacion de train/val \\
+Traza por fold & PASS & filas [502, 505, 503, 374, 411] & sin perdidas de observaciones \\
+Overlap / gaps & PASS & overlap=False; gap=0 por fold & concatenacion contigua \\
+Indices temporales & PASS & monotonicidad e indices unicos & calendario stitched valido \\
+Equity reconstruible & PASS & max\_abs\_diff = 0 & equity final consistente \\
+Drawdown reconstruible & PASS & drawdown desde equity stitched & sin recomposicion por piezas \\
+MaxDD audit & PASS & diff = 0.0 bps & MaxDD no artefactual \\
+Disponibilidad nominal fold 5 & INFO & pedido 2026-02-20; efectivo 2026-02-19 & diferencia explicita, no error de stitched \\
+\bottomrule
+\end{tabular}
+\end{table}
