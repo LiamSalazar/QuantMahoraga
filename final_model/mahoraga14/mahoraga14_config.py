@@ -24,6 +24,7 @@ class Mahoraga14Config(m6.Mahoraga6Config):
     main_variant_key: str = "STRUCTURAL_DEFENSE_ONLY"
     continuation_variant_key: str = "CONTINUATION_PRESSURE_V2_ONLY"
     combo_variant_key: str = "STRUCTURAL_DEFENSE_PLUS_CONTINUATION_PRESSURE_V2"
+    full_primary_variant_key: str = "CONTINUATION_PRESSURE_V2_ONLY"
 
     weight_cap: float = 0.60
     k_atr: float = 3.0
@@ -117,12 +118,15 @@ class Mahoraga14Config(m6.Mahoraga6Config):
                 "defense_beta_penalty": (0.05,),
                 "raw_rel_boost": (1.00, 1.10),
             }
+        # FULL 14.1 is an audit mode, not a combinatorial discovery mode.
+        # Keeping calibration on the same focused grid as FAST preserves
+        # comparability and prevents the prior 78k-combos-per-fold blow-up.
         return {
-            "base_mix": (0.14, 0.22, 0.30, 0.38),
-            "defense_mix": (0.40, 0.50, 0.62),
-            "base_beta_penalty": (0.00, 0.01, 0.02),
-            "defense_beta_penalty": (0.04, 0.06, 0.08),
-            "raw_rel_boost": (1.00, 1.08, 1.16),
+            "base_mix": (0.18, 0.30),
+            "defense_mix": (0.45, 0.60),
+            "base_beta_penalty": (0.00,),
+            "defense_beta_penalty": (0.05,),
+            "raw_rel_boost": (1.00, 1.10),
         }
 
     def policy_grid(self) -> Dict[str, Tuple[float, ...]]:
@@ -135,9 +139,9 @@ class Mahoraga14Config(m6.Mahoraga6Config):
                 "structural_exp_cap": (0.80, 0.86),
             }
         return {
-            "structural_enter_thr": (0.70, 0.76, 0.82),
-            "hawkes_weight": (0.08, 0.14, 0.20),
-            "structural_blend": (0.25, 0.35, 0.50),
-            "structural_gate": (0.80, 0.86, 0.92),
-            "structural_exp_cap": (0.76, 0.82, 0.88),
+            "structural_enter_thr": (0.76, 0.82),
+            "hawkes_weight": (0.10, 0.18),
+            "structural_blend": (0.30, 0.45),
+            "structural_gate": (0.88,),
+            "structural_exp_cap": (0.80, 0.86),
         }

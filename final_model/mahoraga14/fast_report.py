@@ -655,7 +655,7 @@ def build_fast_report_text(wf: Dict[str, Any], cfg: Mahoraga14Config) -> str:
     return "\n".join(lines)
 
 
-def save_fast_outputs(wf: Dict[str, Any], cfg: Mahoraga14Config) -> Dict[str, pd.DataFrame]:
+def save_fast_outputs(wf: Dict[str, Any], cfg: Mahoraga14Config, costs=None) -> Dict[str, pd.DataFrame]:
     ensure_dir(cfg.outputs_dir)
     comparison_df = _build_stitched_comparison_fast(wf, cfg)
     fold_df = _build_fold_summary_fast(wf)

@@ -26,7 +26,7 @@ def run_mahoraga14(make_plots_flag: bool = False, run_mode: str = "FAST") -> Dic
     costs = m6.CostsConfig()
     ohlcv, universe_schedule, ff, universe_snaps = load_inputs(cfg)
     wf = run_walk_forward_mahoraga14(ohlcv, cfg, costs, universe_schedule)
-    artifacts = save_outputs(wf, cfg, ff=ff)
+    artifacts = save_outputs(wf, cfg, ff=ff, costs=costs)
     print(build_final_report_text(wf, cfg))
     return {"wf": wf, "artifacts": artifacts, "cfg": cfg, "ff": ff, "universe_schedule": universe_schedule, "universe_snaps": universe_snaps}
 

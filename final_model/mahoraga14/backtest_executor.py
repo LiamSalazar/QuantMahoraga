@@ -165,6 +165,7 @@ def _build_legacy_baseline_bt(pre: Dict[str, Any], cfg: Mahoraga14Config, costs:
     ones = pd.Series(1.0, index=idx)
     bt = backtest_from_1x_weights(pre, weights_exec_1x, ones, ones, ones, cfg, costs, label="LEGACY_BASELINE")
     bt["scores"] = score
+    bt["weights_exec_1x"] = weights_exec_1x
     return bt
 
 
@@ -180,6 +181,7 @@ def _build_base_candidate_bt(
     bt["scores"] = engine_cache["scores"]
     bt["stop_active_share"] = engine_cache["stop_active_share"]
     bt["new_stop_share"] = engine_cache["new_stop_share"]
+    bt["weights_exec_1x"] = engine_cache["weights_exec_1x"]
     return bt
 
 
@@ -341,11 +343,15 @@ def _slice_bt_to_test_window(bt: Dict[str, Any], start: pd.Timestamp, end: pd.Ti
     returns = bt["returns_net"].loc[start:end].copy()
     if len(returns) == 0:
         raise ValueError(f"Empty test window slice for {bt.get('label', 'UNKNOWN')} between {start} and {end}.")
+    gross_returns = bt.get("returns_gross", pd.Series(dtype=float)).reindex(returns.index).fillna(0.0).copy()
+    transaction_cost = bt.get("transaction_cost", pd.Series(dtype=float)).reindex(returns.index).fillna(0.0).copy()
     exposure = bt["exposure"].reindex(returns.index).fillna(0.0).copy()
     turnover = bt["turnover"].reindex(returns.index).fillna(0.0).copy()
     equity = bt.get("equity", pd.Series(dtype=float)).reindex(returns.index)
     return {
         "returns": returns,
+        "gross_returns": gross_returns,
+        "transaction_cost": transaction_cost,
         "exposure": exposure,
         "turnover": turnover,
         "equity": equity if len(equity) else pd.Series(dtype=float),
@@ -378,6 +384,8 @@ def _stitch_from_getter(results: List[Dict[str, Any]], getter, cfg: Mahoraga14Co
     if returns.index.has_duplicates:
         dupes = returns.index[returns.index.duplicated()].unique()
         raise ValueError(f"Duplicate periods detected in stitched {label}: {list(dupes[:5])}")
+    gross_returns = pd.concat([window["gross_returns"] for window in slices]).sort_index().reindex(returns.index).fillna(0.0)
+    transaction_cost = pd.concat([window["transaction_cost"] for window in slices]).sort_index().reindex(returns.index).fillna(0.0)
     exposure = pd.concat([window["exposure"] for window in slices]).sort_index().reindex(returns.index).fillna(0.0)
     turnover = pd.concat([window["turnover"] for window in slices]).sort_index().reindex(returns.index).fillna(0.0)
     equity = cfg.capital_initial * (1.0 + returns).cumprod()
@@ -385,6 +393,8 @@ def _stitch_from_getter(results: List[Dict[str, Any]], getter, cfg: Mahoraga14Co
     return {
         "label": label,
         "returns": returns,
+        "gross_returns": gross_returns,
+        "transaction_cost": transaction_cost,
         "exposure": exposure,
         "turnover": turnover,
         "equity": equity,
@@ -394,16 +404,44 @@ def _stitch_from_getter(results: List[Dict[str, Any]], getter, cfg: Mahoraga14Co
 
 def _stitch_benchmark(results: List[Dict[str, Any]], bench_key: str, cfg: Mahoraga14Config, label: str) -> Dict[str, Any]:
     rows = []
+    trace_rows = []
     for result in results:
         start = pd.Timestamp(result["test_start"])
         end = pd.Timestamp(result["test_end"])
         bt = result["base_bt"]
-        rows.append(bt["bench"][bench_key].loc[start:end])
+        window = bt["bench"][bench_key].loc[start:end]
+        rows.append(window)
+        trace_rows.append(
+            {
+                "Label": label,
+                "Fold": int(result["fold"]),
+                "SourceBacktest": bt.get("label", label),
+                "WindowType": "TEST_ONLY",
+                "RequestedStart": start,
+                "RequestedEnd": end,
+                "SliceStart": window.index.min() if len(window) else pd.NaT,
+                "SliceEnd": window.index.max() if len(window) else pd.NaT,
+                "Rows": int(len(window)),
+            }
+        )
     returns = pd.concat(rows).sort_index() if rows else pd.Series(dtype=float)
+    if len(returns) and returns.index.has_duplicates:
+        dupes = returns.index[returns.index.duplicated()].unique()
+        raise ValueError(f"Duplicate benchmark periods detected in stitched {label}: {list(dupes[:5])}")
     equity = cfg.capital_initial * (1.0 + returns).cumprod() if len(returns) else pd.Series(dtype=float)
     exposure = pd.Series(1.0, index=returns.index, dtype=float)
     turnover = pd.Series(0.0, index=returns.index, dtype=float)
-    return {"label": label, "returns": returns, "equity": equity, "exposure": exposure, "turnover": turnover}
+    trace = pd.DataFrame(trace_rows).sort_values(["Fold", "SliceStart"]).reset_index(drop=True)
+    return {
+        "label": label,
+        "returns": returns,
+        "gross_returns": returns.copy(),
+        "transaction_cost": pd.Series(0.0, index=returns.index, dtype=float),
+        "equity": equity,
+        "exposure": exposure,
+        "turnover": turnover,
+        "trace": trace,
+    }
 
 
 def _stitch(results: List[Dict[str, Any]], key: str, cfg: Mahoraga14Config, label: str) -> Dict[str, Any]:
@@ -480,7 +518,12 @@ def _run_variant_backtest(
         costs,
         label=f"{variant_label}_{fold_n}",
     )
-    return {"bt": bt, "override_weekly": override_weekly.assign(fold=fold_n), "override_daily": override_daily}
+    return {
+        "bt": bt,
+        "override_weekly": override_weekly.assign(fold=fold_n),
+        "override_daily": override_daily,
+        "weights_exec_1x": weights_exec_1x,
+    }
 
 
 def _prepare_weekly_candidate_frame(
@@ -802,6 +845,17 @@ def _run_single_fold(
     if len(continuation_calibration):
         continuation_calibration["fold"] = fold_n
 
+    stress_pre = {
+        "idx": pre["idx"],
+        "rets": pre["rets"],
+        "qqq": pre["qqq"],
+        "spy": pre["spy"],
+        "crisis_scale": pre["crisis_scale"],
+        "turb_scale": pre["turb_scale"],
+        "corr_rho": pre["corr_rho"],
+        "corr_state": pre["corr_state"],
+    }
+
     return {
         "fold": fold_n,
         "test_start": test_start,
@@ -812,11 +866,18 @@ def _run_single_fold(
         "variant_bts": variant_bts,
         "variant_runs": variant_runs,
         "weekly_full": weekly_full.loc[test_start:test_end].copy(),
+        "weekly_full_all": weekly_full.copy(),
         "fold_row": fold_row,
         "calibration_df": calib_df,
         "selected_candidate": selected_candidate,
         "selection_support": _candidate_support(calib_df, float(best.get("candidate_id", -1)), cfg_fold).assign(fold=fold_n),
         "continuation_calibration": continuation_calibration,
+        "cfg_fold": cfg_fold,
+        "policy_params": policy_params,
+        "continuation_fit": continuation_fit,
+        "stress_pre": stress_pre,
+        "base_weights_exec_1x": base_cache_full["weights_exec_1x"],
+        "defense_weights_exec_1x": defense_cache_full["weights_exec_1x"],
     }
 
 
@@ -866,8 +927,19 @@ def run_walk_forward_mahoraga14(
         "QQQ": _stitch_benchmark(results, "QQQ_r", cfg, "QQQ"),
         "SPY": _stitch_benchmark(results, "SPY_r", cfg, "SPY"),
     }
+    stitched_traces = {
+        cfg.historical_benchmark_label: stitched_legacy["trace"].copy(),
+        "QQQ": stitched_benchmarks["QQQ"]["trace"].copy(),
+        "SPY": stitched_benchmarks["SPY"]["trace"].copy(),
+        cfg.official_baseline_label: stitched_base["trace"].copy(),
+        cfg.main_variant_key: stitched_variants[cfg.main_variant_key]["trace"].copy(),
+        cfg.continuation_variant_key: stitched_variants[cfg.continuation_variant_key]["trace"].copy(),
+        cfg.combo_variant_key: stitched_variants[cfg.combo_variant_key]["trace"].copy(),
+    }
     stitched_model = stitched_variants[cfg.main_variant_key]
     return {
+        "calendar_index": global_pre["idx"].copy(),
+        "folds": folds.copy(),
         "results": results,
         "fold_df": fold_df,
         "selected_df": selected_df,
@@ -884,5 +956,6 @@ def run_walk_forward_mahoraga14(
         "stitched_variants": stitched_variants,
         "stitched_override_daily": stitched_override_daily,
         "stitched_benchmarks": stitched_benchmarks,
+        "stitched_traces": stitched_traces,
         "stitched_test_trace": stitched_model["trace"].copy(),
     }

@@ -392,7 +392,8 @@ def backtest_from_1x_weights(
     weights_scaled = weights_exec_1x.mul(total_scale, axis=0)
 
     turnover, tc = m6._costs(weights_scaled, costs)
-    port_net = ((weights_scaled * rets).sum(axis=1) - tc).replace([np.inf, -np.inf], 0.0).fillna(0.0)
+    port_gross = (weights_scaled * rets).sum(axis=1).replace([np.inf, -np.inf], 0.0).fillna(0.0)
+    port_net = (port_gross - tc).replace([np.inf, -np.inf], 0.0).fillna(0.0)
     equity = cfg.capital_initial * (1.0 + port_net).cumprod()
     exposure = weights_scaled.abs().sum(axis=1).clip(0.0, cfg.max_exposure)
 
@@ -404,6 +405,8 @@ def backtest_from_1x_weights(
     return {
         "label": label,
         "returns_net": port_net,
+        "returns_gross": port_gross,
+        "transaction_cost": tc,
         "equity": equity,
         "exposure": exposure,
         "turnover": turnover,

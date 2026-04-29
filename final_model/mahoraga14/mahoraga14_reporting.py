@@ -19,8 +19,8 @@ def build_final_report_text(wf: Dict[str, Any], cfg: Mahoraga14Config) -> str:
     return build_fast_report_text(wf, cfg)
 
 
-def save_outputs(wf: Dict[str, Any], cfg: Mahoraga14Config, ff=None) -> Dict[str, pd.DataFrame]:
+def save_outputs(wf: Dict[str, Any], cfg: Mahoraga14Config, ff=None, costs=None) -> Dict[str, pd.DataFrame]:
     if cfg.run_mode.upper() == "FULL":
-        return save_full_outputs(wf, cfg, ff=ff)
-    return save_fast_outputs(wf, cfg)
+        return save_full_outputs(wf, cfg, ff=ff, costs=costs)
+    return save_fast_outputs(wf, cfg, costs=costs)
 
