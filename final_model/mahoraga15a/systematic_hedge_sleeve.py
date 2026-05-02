@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from mahoraga15a_config import Mahoraga15AConfig
+from mahoraga15a_utils import clip01
 
 
 def _solve_non_negative_ridge(a: np.ndarray, gap: np.ndarray, ridge: float) -> np.ndarray:
@@ -49,6 +50,36 @@ def build_raw_hedge_plan(
             ],
             dtype=float,
         )
+        beta_gap_score = float(
+            clip01(
+                0.55 * (gap[0] / max(1e-6, cfg.target_beta_qqq_high))
+                + 0.45 * (gap[1] / max(1e-6, cfg.target_beta_spy_high))
+            ).iloc[0]
+        )
+
+        directional_permission = float(
+            clip01(
+                cfg.hedge_directional_floor
+                + 0.45 * row["benchmark_weakness"]
+                + 0.30 * row["bear_persistence"]
+                + 0.25 * row["break_risk"]
+                - 0.35 * row["continuation_relief"]
+            ).iloc[0]
+        )
+        fragility_permission = float(
+            clip01(
+                0.50 * row["structural_fragility"] + 0.30 * row["stress_intensity"] + 0.20 * row["realized_vol_pressure"]
+            ).iloc[0]
+        )
+        hedge_permission = float(
+            clip01(
+                cfg.hedge_permission_floor
+                + 0.45 * beta_gap_score
+                + 0.30 * fragility_permission
+                + 0.25 * directional_permission
+            ).iloc[0]
+        )
+
         a = np.array(
             [
                 [1.0, float(row["spy_beta_qqq"])],
@@ -58,7 +89,11 @@ def build_raw_hedge_plan(
         )
         raw = _solve_non_negative_ridge(a, gap, cfg.hedge_solver_ridge)
         raw = _cap_mix(raw, cfg.hedge_max_single_name_share)
+        raw_budget_unscaled = float(raw.sum())
+        if raw_budget_unscaled > 1e-12:
+            raw = raw * (hedge_permission * raw_budget_unscaled / raw_budget_unscaled)
         raw_budget = float(raw.sum())
+
         projected_beta_qqq = long_beta_qqq_scaled - (raw[0] + raw[1] * float(row["spy_beta_qqq"]))
         projected_beta_spy = long_beta_spy_scaled - (raw[0] * float(row["qqq_beta_spy"]) + raw[1])
         rows.append(
@@ -71,6 +106,11 @@ def build_raw_hedge_plan(
                 "raw_projected_beta_spy": projected_beta_spy,
                 "raw_long_beta_qqq_scaled": long_beta_qqq_scaled,
                 "raw_long_beta_spy_scaled": long_beta_spy_scaled,
+                "raw_beta_gap_qqq": float(gap[0]),
+                "raw_beta_gap_spy": float(gap[1]),
+                "hedge_directional_permission": directional_permission,
+                "hedge_fragility_permission": fragility_permission,
+                "hedge_permission": hedge_permission,
             }
         )
     return pd.DataFrame(rows).set_index("Date")

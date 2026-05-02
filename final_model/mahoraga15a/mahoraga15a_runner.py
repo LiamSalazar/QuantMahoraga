@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -16,11 +17,17 @@ if str(_M14_DIR) not in sys.path:
     sys.path.append(str(_M14_DIR))
 
 import mahoraga6_1 as m6
-from backtest_executor import run_walk_forward_mahoraga15a
 from mahoraga14_data import load_inputs
 from mahoraga15a_config import Mahoraga15AConfig
 from mahoraga15a_reporting import save_outputs
 from mahoraga15a_utils import ensure_dir
+
+_BACKTEST_SPEC = importlib.util.spec_from_file_location("mahoraga15a_local_backtest_executor", _THIS_DIR / "backtest_executor.py")
+if _BACKTEST_SPEC is None or _BACKTEST_SPEC.loader is None:
+    raise ImportError("Unable to load Mahoraga15A backtest executor.")
+_BACKTEST_MODULE = importlib.util.module_from_spec(_BACKTEST_SPEC)
+_BACKTEST_SPEC.loader.exec_module(_BACKTEST_MODULE)
+run_walk_forward_mahoraga15a = _BACKTEST_MODULE.run_walk_forward_mahoraga15a
 
 
 def run_mahoraga15a(run_mode: str = "FAST") -> Dict[str, Any]:
@@ -41,6 +48,10 @@ def run_mahoraga15a(run_mode: str = "FAST") -> Dict[str, Any]:
         "universe_schedule": universe_schedule,
         "universe_snaps": universe_snaps,
     }
+
+
+def run_mahoraga15a1(run_mode: str = "FAST") -> Dict[str, Any]:
+    return run_mahoraga15a(run_mode=run_mode)
 
 
 if __name__ == "__main__":

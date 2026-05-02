@@ -45,11 +45,43 @@ def _delay_series(series: pd.Series, periods: int) -> pd.Series:
     return pd.Series(series, dtype=float).shift(periods).fillna(0.0)
 
 
+def _budget_multiplier(native_gross: pd.Series, target_budget: pd.Series) -> pd.Series:
+    base = pd.Series(native_gross, dtype=float)
+    target = pd.Series(target_budget, dtype=float).reindex(base.index).fillna(0.0)
+    mult = target.divide(base.replace(0.0, np.nan)).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    return mult.clip(lower=0.0)
+
+
+def _compose_scaled_long_object(
+    long_book_fold: Dict[str, Any],
+    budget_target: pd.Series,
+    cfg: Mahoraga15AConfig,
+    costs,
+    label: str,
+) -> Dict[str, Any]:
+    idx = pd.DatetimeIndex(long_book_fold["weights"].index)
+    asset_returns = long_book_fold["asset_returns"].reindex(idx).fillna(0.0)
+    native_weights = long_book_fold["weights"].reindex(idx).fillna(0.0)
+    native_gross = long_book_fold["gross_long"].reindex(idx).fillna(0.0)
+    budget_multiplier = _budget_multiplier(native_gross, budget_target)
+    scaled_weights = native_weights.mul(budget_multiplier, axis=0)
+    obj = build_weight_backtest(scaled_weights, asset_returns[scaled_weights.columns], cfg, costs, label=label)
+    obj["budget_multiplier"] = budget_multiplier
+    obj["target_budget"] = pd.Series(budget_target, dtype=float).reindex(idx).fillna(0.0)
+    obj["asset_returns"] = asset_returns
+    return obj
+
+
 def _build_ls_weights(long_book_fold: Dict[str, Any], allocator_trace: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     idx = pd.DatetimeIndex(long_book_fold["weights"].index)
-    long_weights = long_book_fold["weights"].reindex(idx).mul(allocator_trace["long_multiplier"].reindex(idx).fillna(0.0), axis=0)
+    long_budget = allocator_trace["long_budget"].reindex(idx).fillna(0.0)
+    native_gross = long_book_fold["gross_long"].reindex(idx).fillna(0.0)
+    long_multiplier = _budget_multiplier(native_gross, long_budget)
+    long_weights = long_book_fold["weights"].reindex(idx).fillna(0.0).mul(long_multiplier, axis=0)
+
     total = pd.DataFrame(0.0, index=idx, columns=long_book_fold["asset_returns"].columns)
     total.loc[:, long_weights.columns] = long_weights.values
+
     short_weights = pd.DataFrame(0.0, index=idx, columns=total.columns)
     short_weights.loc[:, "QQQ"] = -allocator_trace["qqq_short_budget"].reindex(idx).fillna(0.0).values
     short_weights.loc[:, "SPY"] = -allocator_trace["spy_short_budget"].reindex(idx).fillna(0.0).values
@@ -77,7 +109,49 @@ def _compose_ls_object(
     total_obj["short_weights"] = short_weights
     total_obj["allocator_trace"] = allocator_trace
     total_obj["asset_returns"] = asset_returns
+    total_obj["cash_buffer"] = allocator_trace["cash_buffer"].reindex(asset_returns.index).fillna(0.0)
+    total_obj["long_budget"] = allocator_trace["long_budget"].reindex(asset_returns.index).fillna(0.0)
+    total_obj["systematic_short_budget"] = allocator_trace["systematic_short_budget"].reindex(asset_returns.index).fillna(0.0)
+    total_obj["qqq_short_budget"] = allocator_trace["qqq_short_budget"].reindex(asset_returns.index).fillna(0.0)
+    total_obj["spy_short_budget"] = allocator_trace["spy_short_budget"].reindex(asset_returns.index).fillna(0.0)
     return total_obj
+
+
+def _compose_delevered_control_object(
+    long_book_fold: Dict[str, Any],
+    allocator_trace: pd.DataFrame,
+    cfg: Mahoraga15AConfig,
+    costs,
+) -> Dict[str, Any]:
+    net_target = allocator_trace["net_exposure"].clip(lower=0.0)
+    control = _compose_scaled_long_object(long_book_fold, net_target, cfg, costs, label=cfg.delevered_label)
+    control["matched_net_exposure_target"] = net_target.reindex(control["returns"].index).fillna(0.0)
+    return control
+
+
+def _stitch_series_from_objects(
+    fold_objects: List[Dict[str, Any]],
+    payloads: List[Dict[str, Any]],
+    key: str,
+) -> pd.Series:
+    parts = []
+    for obj, payload in zip(fold_objects, payloads):
+        if key not in obj:
+            continue
+        parts.append(pd.Series(obj[key], dtype=float).loc[payload["test_start"] : payload["test_end"]])
+    return pd.concat(parts).sort_index() if parts else pd.Series(dtype=float)
+
+
+def _stitch_series_from_payloads(
+    payloads: List[Dict[str, Any]],
+    payload_key: str,
+    series_key: str,
+) -> pd.Series:
+    parts = []
+    for payload in payloads:
+        frame = payload[payload_key]
+        parts.append(pd.Series(frame[series_key], dtype=float).loc[payload["test_start"] : payload["test_end"]])
+    return pd.concat(parts).sort_index() if parts else pd.Series(dtype=float)
 
 
 def rebuild_ls_fold(
@@ -110,18 +184,29 @@ def rebuild_ls_fold(
     allocator_trace = finalize_allocator_trace(payload["state_df"], raw_hedge, controls, cfg)
     delay_days = int(override.get("delay_days", 0))
     if delay_days > 0:
-        for col in ["long_multiplier", "long_budget", "systematic_short_budget", "cash_buffer", "qqq_short_budget", "spy_short_budget"]:
+        for col in [
+            "long_multiplier",
+            "long_budget",
+            "systematic_short_budget",
+            "cash_buffer",
+            "net_exposure",
+            "gross_exposure",
+            "qqq_short_budget",
+            "spy_short_budget",
+        ]:
             allocator_trace[col] = _delay_series(allocator_trace[col], delay_days)
         allocator_trace["predicted_beta_qqq"] = _delay_series(allocator_trace["predicted_beta_qqq"], delay_days)
         allocator_trace["predicted_beta_spy"] = _delay_series(allocator_trace["predicted_beta_spy"], delay_days)
 
     ls_obj = _compose_ls_object(payload["long_book_fold"], allocator_trace, cfg, costs, payload["label"])
+    delevered_obj = _compose_delevered_control_object(payload["long_book_fold"], allocator_trace, cfg, costs)
     payload_out = {
         **payload,
         "controls": controls,
         "raw_hedge": raw_hedge,
         "allocator_trace": allocator_trace,
         "ls_obj": ls_obj,
+        "delevered_obj": delevered_obj,
     }
     return payload_out
 
@@ -166,11 +251,28 @@ def run_walk_forward_mahoraga15a(
         _build_fold_payload(result, long_fold_book, cfg, costs)
         for result, long_fold_book in zip(wf14["results"], long_fold_books)
     ]
+    fold_meta = _fold_meta(wf14["results"])
     ls_fold_objects = [payload["ls_obj"] for payload in payloads]
-    stitched_ls = stitch_objects(ls_fold_objects, _fold_meta(wf14["results"]), cfg, cfg.ls_label)
+    delevered_fold_objects = [payload["delevered_obj"] for payload in payloads]
+
+    stitched_ls = stitch_objects(ls_fold_objects, fold_meta, cfg, cfg.ls_label)
+    stitched_ls["long_net_contribution"] = _stitch_series_from_objects(ls_fold_objects, payloads, "long_net_contribution")
+    stitched_ls["short_net_contribution"] = _stitch_series_from_objects(ls_fold_objects, payloads, "short_net_contribution")
+    stitched_ls["long_gross_contribution"] = _stitch_series_from_objects(ls_fold_objects, payloads, "long_gross_contribution")
+    stitched_ls["short_gross_contribution"] = _stitch_series_from_objects(ls_fold_objects, payloads, "short_gross_contribution")
+    stitched_ls["cash_buffer"] = _stitch_series_from_objects(ls_fold_objects, payloads, "cash_buffer")
+    stitched_ls["long_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "long_budget")
+    stitched_ls["systematic_short_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "systematic_short_budget")
+    stitched_ls["qqq_short_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "qqq_short_budget")
+    stitched_ls["spy_short_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "spy_short_budget")
+
+    stitched_delevered = stitch_objects(delevered_fold_objects, fold_meta, cfg, cfg.delevered_label)
+    stitched_delevered["matched_net_exposure_target"] = _stitch_series_from_objects(delevered_fold_objects, payloads, "matched_net_exposure_target")
+
     allocator_trace = _concat_trace(payloads, "allocator_trace")
     state_trace = _concat_trace(payloads, "state_df")
     raw_hedge_trace = _concat_trace(payloads, "raw_hedge")
+    controls_trace = _concat_trace(payloads, "controls")
 
     return {
         "cfg": cfg,
@@ -181,10 +283,24 @@ def run_walk_forward_mahoraga15a(
         "freeze_validation_df": freeze_validation_df,
         "ls_fold_payloads": payloads,
         "ls_fold_objects": ls_fold_objects,
+        "delevered_fold_objects": delevered_fold_objects,
+        "stitched_delevered_control": stitched_delevered,
         "stitched_ls": stitched_ls,
         "stitched_legacy": wf14["stitched_legacy"],
         "stitched_benchmarks": wf14["stitched_benchmarks"],
         "allocator_trace": allocator_trace,
         "state_trace": state_trace,
         "raw_hedge_trace": raw_hedge_trace,
+        "controls_trace": controls_trace,
+        "ls_component_trace": pd.DataFrame(
+            {
+                "long_net_contribution": stitched_ls["long_net_contribution"],
+                "short_net_contribution": stitched_ls["short_net_contribution"],
+                "long_gross_contribution": stitched_ls["long_gross_contribution"],
+                "short_gross_contribution": stitched_ls["short_gross_contribution"],
+                "cash_buffer": stitched_ls["cash_buffer"],
+                "long_budget": stitched_ls["long_budget"],
+                "systematic_short_budget": stitched_ls["systematic_short_budget"],
+            }
+        ),
     }
