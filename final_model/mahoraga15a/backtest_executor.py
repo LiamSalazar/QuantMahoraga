@@ -41,10 +41,6 @@ def _fold_meta(results: List[Dict[str, Any]]) -> List[Tuple[int, pd.Timestamp, p
     return [(int(r["fold"]), pd.Timestamp(r["test_start"]), pd.Timestamp(r["test_end"])) for r in results]
 
 
-def _delay_series(series: pd.Series, periods: int) -> pd.Series:
-    return pd.Series(series, dtype=float).shift(periods).fillna(0.0)
-
-
 def _shift_series(series: pd.Series, periods: int) -> pd.Series:
     return pd.Series(series, dtype=float).shift(periods).fillna(0.0)
 
@@ -76,21 +72,44 @@ def _compose_scaled_long_object(
     return obj
 
 
-def _build_ls_weights(long_book_fold: Dict[str, Any], allocator_trace: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def _recompute_allocator_from_sleeves(allocator_trace: pd.DataFrame) -> pd.DataFrame:
+    out = allocator_trace.copy()
+    out["crash_short_budget"] = out[["crash_qqq_short_budget", "crash_spy_short_budget"]].sum(axis=1)
+    out["bear_short_budget"] = out[["bear_qqq_short_budget", "bear_spy_short_budget"]].sum(axis=1)
+    out["qqq_short_budget"] = out["crash_qqq_short_budget"] + out["bear_qqq_short_budget"]
+    out["spy_short_budget"] = out["crash_spy_short_budget"] + out["bear_spy_short_budget"]
+    out["systematic_short_budget"] = out["crash_short_budget"] + out["bear_short_budget"]
+    out["net_exposure"] = out["long_budget"] - out["systematic_short_budget"]
+    out["gross_exposure"] = out["long_budget"] + out["systematic_short_budget"]
+    out["cash_buffer"] = (1.0 - out["long_budget"] - out["systematic_short_budget"]).clip(lower=0.0)
+    out["predicted_beta_qqq"] = out["long_beta_qqq"] * out["long_multiplier"] - (out["qqq_short_budget"] + out["spy_short_budget"] * out["spy_beta_qqq"])
+    out["predicted_beta_spy"] = out["long_beta_spy"] * out["long_multiplier"] - (out["qqq_short_budget"] * out["qqq_beta_spy"] + out["spy_short_budget"])
+    return out
+
+
+def _build_ls_weights(
+    long_book_fold: Dict[str, Any],
+    allocator_trace: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     idx = pd.DatetimeIndex(long_book_fold["weights"].index)
     long_budget = allocator_trace["long_budget"].reindex(idx).fillna(0.0)
     native_gross = long_book_fold["gross_long"].reindex(idx).fillna(0.0)
     long_multiplier = _budget_multiplier(native_gross, long_budget)
     long_weights = long_book_fold["weights"].reindex(idx).fillna(0.0).mul(long_multiplier, axis=0)
 
-    total = pd.DataFrame(0.0, index=idx, columns=long_book_fold["asset_returns"].columns)
-    total.loc[:, long_weights.columns] = long_weights.values
+    base = pd.DataFrame(0.0, index=idx, columns=long_book_fold["asset_returns"].columns)
+    base.loc[:, long_weights.columns] = long_weights.values
 
-    short_weights = pd.DataFrame(0.0, index=idx, columns=total.columns)
-    short_weights.loc[:, "QQQ"] = -allocator_trace["qqq_short_budget"].reindex(idx).fillna(0.0).values
-    short_weights.loc[:, "SPY"] = -allocator_trace["spy_short_budget"].reindex(idx).fillna(0.0).values
-    total = total.add(short_weights, fill_value=0.0)
-    return long_weights, short_weights, total
+    crash_weights = pd.DataFrame(0.0, index=idx, columns=base.columns)
+    crash_weights.loc[:, "QQQ"] = -allocator_trace["crash_qqq_short_budget"].reindex(idx).fillna(0.0).values
+    crash_weights.loc[:, "SPY"] = -allocator_trace["crash_spy_short_budget"].reindex(idx).fillna(0.0).values
+
+    bear_weights = pd.DataFrame(0.0, index=idx, columns=base.columns)
+    bear_weights.loc[:, "QQQ"] = -allocator_trace["bear_qqq_short_budget"].reindex(idx).fillna(0.0).values
+    bear_weights.loc[:, "SPY"] = -allocator_trace["bear_spy_short_budget"].reindex(idx).fillna(0.0).values
+
+    total_weights = base.add(crash_weights, fill_value=0.0).add(bear_weights, fill_value=0.0)
+    return long_weights, crash_weights, bear_weights, total_weights
 
 
 def _compose_ls_object(
@@ -101,24 +120,38 @@ def _compose_ls_object(
     label: str,
 ) -> Dict[str, Any]:
     asset_returns = long_book_fold["asset_returns"].reindex(allocator_trace.index).fillna(0.0)
-    long_weights, short_weights, total_weights = _build_ls_weights(long_book_fold, allocator_trace)
+    long_weights, crash_weights, bear_weights, total_weights = _build_ls_weights(long_book_fold, allocator_trace)
     long_obj = build_weight_backtest(long_weights, asset_returns[long_weights.columns], cfg, costs, label=f"{label}_LONG")
-    short_obj = build_weight_backtest(short_weights, asset_returns[short_weights.columns], cfg, costs, label=f"{label}_SHORT")
+    crash_obj = build_weight_backtest(crash_weights, asset_returns[crash_weights.columns], cfg, costs, label=f"{label}_CRASH")
+    bear_obj = build_weight_backtest(bear_weights, asset_returns[bear_weights.columns], cfg, costs, label=f"{label}_BEAR")
     total_obj = build_weight_backtest(total_weights, asset_returns[total_weights.columns], cfg, costs, label=label)
     total_obj["long_gross_contribution"] = long_obj["gross_returns"]
-    total_obj["short_gross_contribution"] = short_obj["gross_returns"]
+    total_obj["crash_gross_contribution"] = crash_obj["gross_returns"]
+    total_obj["bear_gross_contribution"] = bear_obj["gross_returns"]
+    total_obj["short_gross_contribution"] = crash_obj["gross_returns"] + bear_obj["gross_returns"]
     total_obj["long_net_contribution"] = long_obj["returns"]
-    total_obj["short_net_contribution"] = short_obj["returns"]
+    total_obj["crash_net_contribution"] = crash_obj["returns"]
+    total_obj["bear_net_contribution"] = bear_obj["returns"]
+    total_obj["short_net_contribution"] = crash_obj["returns"] + bear_obj["returns"]
     total_obj["long_weights"] = long_weights
-    total_obj["short_weights"] = short_weights
+    total_obj["crash_short_weights"] = crash_weights
+    total_obj["bear_short_weights"] = bear_weights
     total_obj["allocator_trace"] = allocator_trace
     total_obj["asset_returns"] = asset_returns
-    total_obj["cash_buffer"] = allocator_trace["cash_buffer"].reindex(asset_returns.index).fillna(0.0)
-    total_obj["long_budget"] = allocator_trace["long_budget"].reindex(asset_returns.index).fillna(0.0)
-    total_obj["crisis_short_budget"] = allocator_trace["crisis_short_budget"].reindex(asset_returns.index).fillna(0.0)
-    total_obj["systematic_short_budget"] = allocator_trace["systematic_short_budget"].reindex(asset_returns.index).fillna(0.0)
-    total_obj["qqq_short_budget"] = allocator_trace["qqq_short_budget"].reindex(asset_returns.index).fillna(0.0)
-    total_obj["spy_short_budget"] = allocator_trace["spy_short_budget"].reindex(asset_returns.index).fillna(0.0)
+    for col in [
+        "cash_buffer",
+        "long_budget",
+        "crash_short_budget",
+        "bear_short_budget",
+        "systematic_short_budget",
+        "crash_qqq_short_budget",
+        "crash_spy_short_budget",
+        "bear_qqq_short_budget",
+        "bear_spy_short_budget",
+        "qqq_short_budget",
+        "spy_short_budget",
+    ]:
+        total_obj[col] = allocator_trace[col].reindex(asset_returns.index).fillna(0.0)
     return total_obj
 
 
@@ -147,18 +180,6 @@ def _stitch_series_from_objects(
     return pd.concat(parts).sort_index() if parts else pd.Series(dtype=float)
 
 
-def _stitch_series_from_payloads(
-    payloads: List[Dict[str, Any]],
-    payload_key: str,
-    series_key: str,
-) -> pd.Series:
-    parts = []
-    for payload in payloads:
-        frame = payload[payload_key]
-        parts.append(pd.Series(frame[series_key], dtype=float).loc[payload["test_start"] : payload["test_end"]])
-    return pd.concat(parts).sort_index() if parts else pd.Series(dtype=float)
-
-
 def rebuild_ls_fold(
     payload: Dict[str, Any],
     cfg: Mahoraga15AConfig,
@@ -168,59 +189,78 @@ def rebuild_ls_fold(
     override = override or {}
     controls = build_allocator_controls(payload["state_df"], cfg)
     if "short_cap_mult" in override:
-        controls["short_cap_dynamic"] = controls["short_cap_dynamic"].mul(float(override["short_cap_mult"])).clip(0.0, cfg.allocator_short_budget_crisis_cap)
+        cap_mult = float(override["short_cap_mult"])
+        controls["crash_cap_dynamic"] = controls["crash_cap_dynamic"].mul(cap_mult).clip(0.0, cfg.allocator_crash_budget_crisis_cap)
+        controls["bear_cap_dynamic"] = controls["bear_cap_dynamic"].mul(cap_mult).clip(0.0, cfg.allocator_bear_budget_crisis_cap)
+        controls["total_short_cap_dynamic"] = np.minimum(cfg.allocator_total_short_budget_cap, controls["crash_cap_dynamic"] + controls["bear_cap_dynamic"])
     if "long_multiplier_mult" in override:
         controls["long_multiplier_target"] = controls["long_multiplier_target"].mul(float(override["long_multiplier_mult"])).clip(
             cfg.allocator_long_multiplier_floor,
             cfg.allocator_long_multiplier_ceiling,
         )
     if "up_speed_mult" in override:
-        controls["short_up_speed"] = controls["short_up_speed"].mul(float(override["up_speed_mult"])).clip(0.03, 0.95)
+        speed_mult = float(override["up_speed_mult"])
+        for col in ["crash_up_speed", "bear_up_speed"]:
+            controls[col] = controls[col].mul(speed_mult).clip(0.03, 0.98)
     if "down_speed_mult" in override:
-        controls["short_down_speed"] = controls["short_down_speed"].mul(float(override["down_speed_mult"])).clip(0.02, 0.80)
+        speed_mult = float(override["down_speed_mult"])
+        for col in ["crash_down_speed", "bear_down_speed"]:
+            controls[col] = controls[col].mul(speed_mult).clip(0.02, 0.95)
 
     raw_hedge = build_raw_hedge_plan(payload["state_df"], controls, cfg)
     hedge_ratio_mult = float(override.get("hedge_ratio_mult", 1.0))
     if hedge_ratio_mult != 1.0:
-        raw_hedge["raw_short_qqq"] = raw_hedge["raw_short_qqq"].mul(hedge_ratio_mult).clip(lower=0.0)
-        raw_hedge["raw_short_spy"] = raw_hedge["raw_short_spy"].mul(hedge_ratio_mult).clip(lower=0.0)
-        raw_hedge["raw_short_budget"] = raw_hedge["raw_short_qqq"] + raw_hedge["raw_short_spy"]
+        for col in [
+            "raw_crash_short_qqq",
+            "raw_crash_short_spy",
+            "raw_bear_short_qqq",
+            "raw_bear_short_spy",
+            "raw_short_qqq",
+            "raw_short_spy",
+        ]:
+            raw_hedge[col] = raw_hedge[col].mul(hedge_ratio_mult).clip(lower=0.0)
+        raw_hedge["raw_crash_short_budget"] = raw_hedge["raw_crash_short_qqq"] + raw_hedge["raw_crash_short_spy"]
+        raw_hedge["raw_bear_short_budget"] = raw_hedge["raw_bear_short_qqq"] + raw_hedge["raw_bear_short_spy"]
+        raw_hedge["raw_short_budget"] = raw_hedge["raw_crash_short_budget"] + raw_hedge["raw_bear_short_budget"]
 
     allocator_trace = finalize_allocator_trace(payload["state_df"], raw_hedge, controls, cfg)
+
     delay_days = int(override.get("delay_days", 0))
-    if delay_days > 0:
+    if delay_days != 0:
         for col in [
             "long_multiplier",
             "long_budget",
-            "crisis_short_budget",
+            "crash_short_budget",
+            "bear_short_budget",
             "systematic_short_budget",
             "cash_buffer",
             "net_exposure",
             "gross_exposure",
+            "crash_qqq_short_budget",
+            "crash_spy_short_budget",
+            "bear_qqq_short_budget",
+            "bear_spy_short_budget",
             "qqq_short_budget",
             "spy_short_budget",
         ]:
-            allocator_trace[col] = _delay_series(allocator_trace[col], delay_days)
-        allocator_trace["predicted_beta_qqq"] = _delay_series(allocator_trace["predicted_beta_qqq"], delay_days)
-        allocator_trace["predicted_beta_spy"] = _delay_series(allocator_trace["predicted_beta_spy"], delay_days)
+            allocator_trace[col] = _shift_series(allocator_trace[col], delay_days)
+        allocator_trace = _recompute_allocator_from_sleeves(allocator_trace)
 
     hedge_shift_days = int(override.get("hedge_shift_days", 0))
-    if hedge_shift_days != 0:
-        for col in ["crisis_short_budget", "systematic_short_budget", "qqq_short_budget", "spy_short_budget"]:
-            allocator_trace[col] = _shift_series(allocator_trace[col], hedge_shift_days)
-        allocator_trace["net_exposure"] = allocator_trace["long_budget"] - allocator_trace["crisis_short_budget"]
-        allocator_trace["gross_exposure"] = allocator_trace["long_budget"] + allocator_trace["crisis_short_budget"]
-        allocator_trace["cash_buffer"] = (1.0 - allocator_trace["long_budget"] - allocator_trace["crisis_short_budget"]).clip(lower=0.0)
-        allocator_trace["predicted_beta_qqq"] = allocator_trace["long_beta_qqq"] * allocator_trace["long_multiplier"] - (
-            allocator_trace["qqq_short_budget"] + allocator_trace["spy_short_budget"] * allocator_trace["spy_beta_qqq"]
-        )
-        allocator_trace["predicted_beta_spy"] = allocator_trace["long_beta_spy"] * allocator_trace["long_multiplier"] - (
-            allocator_trace["qqq_short_budget"] * allocator_trace["qqq_beta_spy"] + allocator_trace["spy_short_budget"]
-        )
+    crash_shift_days = int(override.get("crash_shift_days", hedge_shift_days))
+    bear_shift_days = int(override.get("bear_shift_days", hedge_shift_days))
+    if crash_shift_days != 0:
+        for col in ["crash_qqq_short_budget", "crash_spy_short_budget"]:
+            allocator_trace[col] = _shift_series(allocator_trace[col], crash_shift_days)
+    if bear_shift_days != 0:
+        for col in ["bear_qqq_short_budget", "bear_spy_short_budget"]:
+            allocator_trace[col] = _shift_series(allocator_trace[col], bear_shift_days)
+    if crash_shift_days != 0 or bear_shift_days != 0:
+        allocator_trace = _recompute_allocator_from_sleeves(allocator_trace)
 
     ls_obj = _compose_ls_object(payload["long_book_fold"], allocator_trace, cfg, costs, payload["label"])
     delevered_obj = _compose_delevered_control_object(payload["long_book_fold"], allocator_trace, cfg, costs)
-    payload_out = {
+    return {
         **payload,
         "controls": controls,
         "raw_hedge": raw_hedge,
@@ -228,7 +268,6 @@ def rebuild_ls_fold(
         "ls_obj": ls_obj,
         "delevered_obj": delevered_obj,
     }
-    return payload_out
 
 
 def _build_fold_payload(
@@ -276,16 +315,28 @@ def run_walk_forward_mahoraga15a(
     delevered_fold_objects = [payload["delevered_obj"] for payload in payloads]
 
     stitched_ls = stitch_objects(ls_fold_objects, fold_meta, cfg, cfg.ls_label)
-    stitched_ls["long_net_contribution"] = _stitch_series_from_objects(ls_fold_objects, payloads, "long_net_contribution")
-    stitched_ls["short_net_contribution"] = _stitch_series_from_objects(ls_fold_objects, payloads, "short_net_contribution")
-    stitched_ls["long_gross_contribution"] = _stitch_series_from_objects(ls_fold_objects, payloads, "long_gross_contribution")
-    stitched_ls["short_gross_contribution"] = _stitch_series_from_objects(ls_fold_objects, payloads, "short_gross_contribution")
-    stitched_ls["cash_buffer"] = _stitch_series_from_objects(ls_fold_objects, payloads, "cash_buffer")
-    stitched_ls["long_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "long_budget")
-    stitched_ls["crisis_short_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "crisis_short_budget")
-    stitched_ls["systematic_short_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "systematic_short_budget")
-    stitched_ls["qqq_short_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "qqq_short_budget")
-    stitched_ls["spy_short_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "spy_short_budget")
+    for key in [
+        "long_net_contribution",
+        "crash_net_contribution",
+        "bear_net_contribution",
+        "short_net_contribution",
+        "long_gross_contribution",
+        "crash_gross_contribution",
+        "bear_gross_contribution",
+        "short_gross_contribution",
+        "cash_buffer",
+        "long_budget",
+        "crash_short_budget",
+        "bear_short_budget",
+        "systematic_short_budget",
+        "crash_qqq_short_budget",
+        "crash_spy_short_budget",
+        "bear_qqq_short_budget",
+        "bear_spy_short_budget",
+        "qqq_short_budget",
+        "spy_short_budget",
+    ]:
+        stitched_ls[key] = _stitch_series_from_objects(ls_fold_objects, payloads, key)
 
     stitched_delevered = stitch_objects(delevered_fold_objects, fold_meta, cfg, cfg.delevered_label)
     stitched_delevered["matched_net_exposure_target"] = _stitch_series_from_objects(delevered_fold_objects, payloads, "matched_net_exposure_target")
@@ -316,12 +367,17 @@ def run_walk_forward_mahoraga15a(
         "ls_component_trace": pd.DataFrame(
             {
                 "long_net_contribution": stitched_ls["long_net_contribution"],
+                "crash_net_contribution": stitched_ls["crash_net_contribution"],
+                "bear_net_contribution": stitched_ls["bear_net_contribution"],
                 "short_net_contribution": stitched_ls["short_net_contribution"],
                 "long_gross_contribution": stitched_ls["long_gross_contribution"],
+                "crash_gross_contribution": stitched_ls["crash_gross_contribution"],
+                "bear_gross_contribution": stitched_ls["bear_gross_contribution"],
                 "short_gross_contribution": stitched_ls["short_gross_contribution"],
                 "cash_buffer": stitched_ls["cash_buffer"],
                 "long_budget": stitched_ls["long_budget"],
-                "crisis_short_budget": stitched_ls["crisis_short_budget"],
+                "crash_short_budget": stitched_ls["crash_short_budget"],
+                "bear_short_budget": stitched_ls["bear_short_budget"],
                 "systematic_short_budget": stitched_ls["systematic_short_budget"],
             }
         ),

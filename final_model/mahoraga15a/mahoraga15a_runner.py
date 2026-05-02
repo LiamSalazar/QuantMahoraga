@@ -58,5 +58,9 @@ def run_mahoraga15a2(run_mode: str = "FAST") -> Dict[str, Any]:
     return run_mahoraga15a(run_mode=run_mode)
 
 
+def run_mahoraga15a3(run_mode: str = "FAST") -> Dict[str, Any]:
+    return run_mahoraga15a(run_mode=run_mode)
+
+
 if __name__ == "__main__":
     run_mahoraga15a(run_mode="FAST")
