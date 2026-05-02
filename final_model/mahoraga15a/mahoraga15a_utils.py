@@ -151,26 +151,29 @@ def rolling_ridge_beta(
     out = pd.Series(np.nan, index=y_s.index, dtype=float)
     x_vals = x_s.to_numpy(dtype=float)
     y_vals = y_s.to_numpy(dtype=float)
-    eye = np.eye(1, dtype=float)
 
     for i in range(len(out)):
         start = max(0, i - window)
         hist = i - start
         if hist < min_obs:
             continue
-        x_hist = x_vals[start:i].reshape(-1, 1)
+        x_hist = x_vals[start:i]
         y_hist = y_vals[start:i]
-        x_mean = np.nanmean(x_hist, axis=0)
+        x_mean = float(np.nanmean(x_hist))
         y_mean = float(np.nanmean(y_hist))
         x_c = np.nan_to_num(x_hist - x_mean, nan=0.0)
         y_c = np.nan_to_num(y_hist - y_mean, nan=0.0)
-        gram = x_c.T @ x_c + float(ridge_alpha) * eye
-        rhs = x_c.T @ y_c
-        try:
-            coef = np.linalg.solve(gram, rhs)
-        except np.linalg.LinAlgError:
-            coef = np.linalg.pinv(gram) @ rhs
-        out.iloc[i] = float(coef[0])
+
+        x_std = float(np.nanstd(x_c, ddof=1))
+        if not np.isfinite(x_std) or x_std <= 1e-12:
+            continue
+
+        x_z = x_c / x_std
+        denom = float(np.dot(x_z, x_z) + float(ridge_alpha))
+        if denom <= 1e-12:
+            continue
+        coef_z = float(np.dot(x_z, y_c) / denom)
+        out.iloc[i] = coef_z / x_std
 
     fallback = pd.Series(y_s.rolling(window, min_periods=min_obs).cov(x_s), index=y_s.index)
     denom = x_s.rolling(window, min_periods=min_obs).var().replace(0.0, np.nan)

@@ -9,13 +9,13 @@ from mahoraga15a_config import Mahoraga15AConfig
 from mahoraga15a_utils import build_weight_backtest, stitch_objects
 
 
-def build_asset_return_frame(result: Dict[str, Any]) -> pd.DataFrame:
+def build_asset_return_frame(result: Dict[str, Any], native_bt: Dict[str, Any]) -> pd.DataFrame:
     idx = pd.DatetimeIndex(result["stress_pre"]["idx"])
     asset_rets = result["stress_pre"]["rets"].reindex(idx).fillna(0.0).copy()
-    qqq = pd.Series(result["stress_pre"]["qqq"], index=idx, dtype=float).ffill()
-    spy = pd.Series(result["stress_pre"]["spy"], index=idx, dtype=float).ffill()
-    asset_rets["QQQ"] = qqq.pct_change().fillna(0.0)
-    asset_rets["SPY"] = spy.pct_change().fillna(0.0)
+    qqq_r = pd.Series(native_bt["bench"]["QQQ_r"], dtype=float).reindex(idx).fillna(0.0)
+    spy_r = pd.Series(native_bt["bench"]["SPY_r"], dtype=float).reindex(idx).fillna(0.0)
+    asset_rets["QQQ"] = qqq_r.values
+    asset_rets["SPY"] = spy_r.values
     return asset_rets.replace([np.inf, -np.inf], 0.0).fillna(0.0)
 
 
@@ -46,7 +46,7 @@ def rebuild_fold_long_book(
 ) -> Dict[str, Any]:
     variant_key = _official_variant_key(cfg, result)
     bt = result["variant_bts"][variant_key]
-    asset_rets = build_asset_return_frame(result)
+    asset_rets = build_asset_return_frame(result, bt)
     weights = bt["weights_scaled"].reindex(asset_rets.index).fillna(0.0)
     rebuilt = build_weight_backtest(weights, asset_rets[weights.columns], cfg, costs, label=f"{cfg.official_long_label}_{int(result['fold'])}")
     rebuilt["native_bt"] = bt
