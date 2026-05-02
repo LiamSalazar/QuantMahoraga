@@ -1,65 +1,52 @@
-﻿# Mahoraga 13
+# Mahoraga 14_2
 
-Mahoraga 13 is a **strict consolidation** on top of Mahoraga 12.
+Mahoraga 14_2 is a **separate long-only thesis** focused on bull participation.
 
-## Design
+## Architecture
 
-The package now has a strict hierarchy:
-
-1. **Base Alpha Engine**
-   - builds the improved baseline that governs by default.
-2. **Path Structure Features**
-   - describes drawdown shape, rebound quality, stop pressure, chop, correlation persistence and market context.
-3. **Exceptional Overrides Only**
-   - `STRUCTURAL_DEFENSE_ONLY` in the main branch
-   - `CONTINUATION_V2_ONLY` and `STRUCTURAL_DEFENSE + CONTINUATION_V2` only as experimental branches
-   - continuation uses a smooth `CONTINUATION_LIFT` driven by path-state / continuation-pressure after valid compression / pause conditions
-4. **Backtest Executor**
-   - calibrates compact FAST grids and wider FULL grids without nested parallelism.
-
-## Core principles
-
-- The improved baseline is the default state.
-- Overrides are exceptional and auditable.
-- No Markov layer.
-- Hawkes is used only as a fast transition signal.
-- FAST and FULL both evaluate folds 1 to 5.
-- FULL reports p-values, BHY q-values and candidate audit artifacts.
-- Invariants are separated into:
-  - global
-  - per fold
-  - per candidate
+1. `BASE_ALPHA_V2`
+   - frozen 14.1 long-only baseline and internal control anchor.
+2. `PARTICIPATION_ALLOCATOR_V1`
+   - weekly allocator that scores continuation, persistence, benchmark strength, breadth, fragility, break-risk, realized volatility and trend state.
+3. `BULL_PARTICIPATION_LAYER`
+   - blends the baseline long book with a leader-participation engine and redeploys cash drag toward a target long budget without adding shorts or hedges.
+4. `RISK_BACKOFF_LAYER`
+   - cuts long budget / blend / caps back when fragility, break-risk or benchmark weakness rise.
+5. `FAST_FAIL_DIAGNOSTICS_14_2`
+   - compares primarily against `QQQ` and `SPY`, plus `Mahoraga 14.1` as control, and writes explicit fail-fast artifacts.
 
 ## Files
 
-- `mahoraga13_config.py`: configuration and compact/wide grids.
-- `mahoraga13_data.py`: OHLCV and PIT universe loading.
-- `mahoraga13_universe.py`: universe helpers.
-- `base_alpha_engine.py`: improved alpha baseline and cached engine paths.
-- `path_structure_features.py`: daily/weekly path descriptors.
-- `structural_defense_model.py`: structural override model.
-- `transition_recovery_model.py`: Hawkes transition signal and historical transition/recovery references.
-- `continuation_v2_model.py`: isolated continuation-after-compression label and model selection.
-- `override_policy.py`: baseline-first override state machine with structural priority and auditable continuation pressure.
-- `backtest_executor.py`: walk-forward execution, calibration and stitching.
-- `fast_report.py`: compact FAST artifacts.
-- `full_report.py`: audit-heavy FULL artifacts.
-- `mahoraga13_backtest.py`: compatibility wrapper to the executor.
-- `mahoraga13_reporting.py`: compatibility wrapper to FAST/FULL reporting.
-- `mahoraga13_runner.py`: entrypoint.
+- `mahoraga14_config.py`: 14_2 configuration, labels, outputs and participation/backoff parameters.
+- `path_structure_features.py`: extended weekly context with QQQ/book slope, trend-state and realized-vol inputs for the allocator.
+- `participation_allocator_v1.py`: bull participation allocator.
+- `bull_participation_layer.py`: leader-blend + cash-drag redeployment layer.
+- `risk_backoff_layer.py`: explicit backoff logic.
+- `backtest_executor.py`: fold execution and integration of the new primary thesis.
+- `fast_fail_diagnostics_14_2.py`: FAST outputs, scorecards, active-return and fail-fast report.
+- `mahoraga14_runner.py`: main runner exposing `run_mahoraga14_2`.
+- `mahoraga14_2_runner.py`: direct FAST entrypoint.
 
 ## Run
 
 ```bash
-python mahoraga13_runner.py
+python mahoraga14_2_runner.py
 ```
 
-## Notes
+## Outputs
 
-- `mahoraga6_1.py` is bundled locally so the package remains self-contained.
-- Outputs are generated only at runtime.
-- Expensive alpha path work is cached once per unique engine candidate.
-- Policy sweeps reuse candidate-specific probabilities and path features instead of recomputing the full alpha path.
-- FAST only fits continuation labels when the continuation branch is actually needed, so main-branch calibration stays compact.
+FAST writes to `D:\QuantMahoraga\mahoraga14_2_outputs` and includes:
 
+- `stitched_comparison_fast_14_2.csv`
+- `bull_window_scorecard_fast.csv`
+- `active_return_vs_qqq_fast.csv`
+- `active_return_vs_qqq_curve.csv`
+- `upside_participation_decomposition_fast.csv`
+- `allocator_cash_drag_fast.csv`
+- `leader_miss_analysis_fast.csv`
+- `candidate_audit_fast_14_2.csv`
+- `final_report_fast_14_2.md`
 
+## Current status
+
+The current 14_2 thesis is implemented and auditable, but the latest FAST run marks it `FAIL_FAST`; inspect the FAST report before promoting or merging.

@@ -217,8 +217,8 @@ def apply_participation_allocator_v1(
     target_budget = (
         float(cfg.participation_long_budget_base)
         + (float(cfg.participation_long_budget_ceiling) - float(cfg.participation_long_budget_base)) * bull_score
-        + 0.07 * underparticipation_score
-        - 0.05 * fragility_score
+        + 0.10 * underparticipation_score
+        - 0.02 * fragility_score
     ).clip(float(cfg.participation_long_budget_floor), float(cfg.participation_long_budget_ceiling))
 
     gate_scale_adj = 1.0 + (float(cfg.participation_gate_max) - 1.0) * (0.65 * bull_score + 0.35 * benchmark_strength)

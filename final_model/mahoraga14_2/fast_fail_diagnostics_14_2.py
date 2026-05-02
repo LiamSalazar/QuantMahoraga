@@ -715,6 +715,12 @@ def _candidate_audit(
     return rows.round(8)
 
 
+def _frame_block(df: pd.DataFrame) -> str:
+    if df is None or len(df) == 0:
+        return "No data."
+    return f"```\n{df.to_string(index=False)}\n```"
+
+
 def _final_report_md(
     comparison_df: pd.DataFrame,
     scorecard_df: pd.DataFrame,
@@ -739,7 +745,7 @@ def _final_report_md(
         lines.append("")
     lines += [
         "## Core comparison",
-        comparison_df.to_markdown(index=False),
+        _frame_block(comparison_df),
         "",
         "## Primary vs control deltas",
         f"- CAGR delta: {(primary['CAGR'] - control['CAGR']):.2f} pts",
@@ -750,16 +756,16 @@ def _final_report_md(
         f"- UpsideCaptureQQQ delta: {(primary['UpsideCaptureQQQ'] - control['UpsideCaptureQQQ']):.4f}",
         "",
         "## Bull windows",
-        scorecard_df.to_markdown(index=False) if len(scorecard_df) else "No bull windows available.",
+        _frame_block(scorecard_df) if len(scorecard_df) else "No bull windows available.",
         "",
         "## Upside participation decomposition",
-        decomposition_df.to_markdown(index=False) if len(decomposition_df) else "No decomposition available.",
+        _frame_block(decomposition_df) if len(decomposition_df) else "No decomposition available.",
         "",
         "## Stress suite",
-        stress_df.to_markdown(index=False) if len(stress_df) else "No stress suite available.",
+        _frame_block(stress_df) if len(stress_df) else "No stress suite available.",
         "",
         "## Robustness samples",
-        robustness_df.head(20).to_markdown(index=False) if len(robustness_df) else "No robustness samples available.",
+        _frame_block(robustness_df.head(20)) if len(robustness_df) else "No robustness samples available.",
     ]
     return "\n".join(lines)
 

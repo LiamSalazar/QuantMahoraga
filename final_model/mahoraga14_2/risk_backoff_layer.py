@@ -41,10 +41,10 @@ def apply_risk_backoff_layer(
         (break_risk >= float(cfg.risk_backoff_hard_break_risk))
         | (fragility >= float(cfg.risk_backoff_hard_fragility))
         | (benchmark_weakness >= float(cfg.risk_backoff_hard_benchmark_weakness))
-        | ((continuation_pressure <= 0.20) & (benchmark_score <= 0.25) & (structural_p >= 0.55))
+        | ((continuation_pressure <= 0.15) & (benchmark_score <= 0.20) & (structural_p >= 0.60))
     )
 
-    soft_scale = (1.0 - 0.80 * backoff_score).clip(0.20, 1.0)
+    soft_scale = (1.0 - 0.55 * backoff_score).clip(0.45, 1.0)
     out["risk_backoff_score"] = backoff_score
     out["risk_backoff_hard_guard"] = hard_guard.astype(int)
 
@@ -61,7 +61,7 @@ def apply_risk_backoff_layer(
     out["exp_cap_adjustment"] = (
         1.0 + (out["exp_cap_adjustment_raw"] - 1.0) * soft_scale
     ).clip(float(cfg.risk_backoff_exp_floor), float(cfg.participation_exp_cap_max))
-    out["leader_blend"] = (out["leader_blend_raw"] * (1.0 - 0.90 * backoff_score)).clip(0.0, float(cfg.participation_leader_blend_max))
+    out["leader_blend"] = (out["leader_blend_raw"] * (1.0 - 0.70 * backoff_score)).clip(0.0, float(cfg.participation_leader_blend_max))
 
     if hard_guard.any():
         out.loc[hard_guard, "long_budget"] = np.minimum(out.loc[hard_guard, "long_budget"], float(cfg.risk_backoff_hard_budget))
