@@ -45,6 +45,10 @@ def _delay_series(series: pd.Series, periods: int) -> pd.Series:
     return pd.Series(series, dtype=float).shift(periods).fillna(0.0)
 
 
+def _shift_series(series: pd.Series, periods: int) -> pd.Series:
+    return pd.Series(series, dtype=float).shift(periods).fillna(0.0)
+
+
 def _budget_multiplier(native_gross: pd.Series, target_budget: pd.Series) -> pd.Series:
     base = pd.Series(native_gross, dtype=float)
     target = pd.Series(target_budget, dtype=float).reindex(base.index).fillna(0.0)
@@ -111,6 +115,7 @@ def _compose_ls_object(
     total_obj["asset_returns"] = asset_returns
     total_obj["cash_buffer"] = allocator_trace["cash_buffer"].reindex(asset_returns.index).fillna(0.0)
     total_obj["long_budget"] = allocator_trace["long_budget"].reindex(asset_returns.index).fillna(0.0)
+    total_obj["crisis_short_budget"] = allocator_trace["crisis_short_budget"].reindex(asset_returns.index).fillna(0.0)
     total_obj["systematic_short_budget"] = allocator_trace["systematic_short_budget"].reindex(asset_returns.index).fillna(0.0)
     total_obj["qqq_short_budget"] = allocator_trace["qqq_short_budget"].reindex(asset_returns.index).fillna(0.0)
     total_obj["spy_short_budget"] = allocator_trace["spy_short_budget"].reindex(asset_returns.index).fillna(0.0)
@@ -187,6 +192,7 @@ def rebuild_ls_fold(
         for col in [
             "long_multiplier",
             "long_budget",
+            "crisis_short_budget",
             "systematic_short_budget",
             "cash_buffer",
             "net_exposure",
@@ -197,6 +203,20 @@ def rebuild_ls_fold(
             allocator_trace[col] = _delay_series(allocator_trace[col], delay_days)
         allocator_trace["predicted_beta_qqq"] = _delay_series(allocator_trace["predicted_beta_qqq"], delay_days)
         allocator_trace["predicted_beta_spy"] = _delay_series(allocator_trace["predicted_beta_spy"], delay_days)
+
+    hedge_shift_days = int(override.get("hedge_shift_days", 0))
+    if hedge_shift_days != 0:
+        for col in ["crisis_short_budget", "systematic_short_budget", "qqq_short_budget", "spy_short_budget"]:
+            allocator_trace[col] = _shift_series(allocator_trace[col], hedge_shift_days)
+        allocator_trace["net_exposure"] = allocator_trace["long_budget"] - allocator_trace["crisis_short_budget"]
+        allocator_trace["gross_exposure"] = allocator_trace["long_budget"] + allocator_trace["crisis_short_budget"]
+        allocator_trace["cash_buffer"] = (1.0 - allocator_trace["long_budget"] - allocator_trace["crisis_short_budget"]).clip(lower=0.0)
+        allocator_trace["predicted_beta_qqq"] = allocator_trace["long_beta_qqq"] * allocator_trace["long_multiplier"] - (
+            allocator_trace["qqq_short_budget"] + allocator_trace["spy_short_budget"] * allocator_trace["spy_beta_qqq"]
+        )
+        allocator_trace["predicted_beta_spy"] = allocator_trace["long_beta_spy"] * allocator_trace["long_multiplier"] - (
+            allocator_trace["qqq_short_budget"] * allocator_trace["qqq_beta_spy"] + allocator_trace["spy_short_budget"]
+        )
 
     ls_obj = _compose_ls_object(payload["long_book_fold"], allocator_trace, cfg, costs, payload["label"])
     delevered_obj = _compose_delevered_control_object(payload["long_book_fold"], allocator_trace, cfg, costs)
@@ -262,6 +282,7 @@ def run_walk_forward_mahoraga15a(
     stitched_ls["short_gross_contribution"] = _stitch_series_from_objects(ls_fold_objects, payloads, "short_gross_contribution")
     stitched_ls["cash_buffer"] = _stitch_series_from_objects(ls_fold_objects, payloads, "cash_buffer")
     stitched_ls["long_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "long_budget")
+    stitched_ls["crisis_short_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "crisis_short_budget")
     stitched_ls["systematic_short_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "systematic_short_budget")
     stitched_ls["qqq_short_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "qqq_short_budget")
     stitched_ls["spy_short_budget"] = _stitch_series_from_objects(ls_fold_objects, payloads, "spy_short_budget")
@@ -300,6 +321,7 @@ def run_walk_forward_mahoraga15a(
                 "short_gross_contribution": stitched_ls["short_gross_contribution"],
                 "cash_buffer": stitched_ls["cash_buffer"],
                 "long_budget": stitched_ls["long_budget"],
+                "crisis_short_budget": stitched_ls["crisis_short_budget"],
                 "systematic_short_budget": stitched_ls["systematic_short_budget"],
             }
         ),

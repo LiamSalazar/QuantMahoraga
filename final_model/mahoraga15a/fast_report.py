@@ -358,14 +358,18 @@ def build_crisis_window_scorecard_fast(wf: Dict[str, Any], cfg: Mahoraga15AConfi
                 "HedgePnLPctInit": round(hedge_pnl, 6) if np.isfinite(hedge_pnl) else np.nan,
                 "LongOnly_Return%": long_m["Return%"],
                 "LongOnly_Sharpe": long_m["Sharpe"],
+                "LongOnly_Sortino": long_m["Sortino"],
                 "LongOnly_MaxDD%": long_m["MaxDD%"],
                 "Delevered_Return%": control_m["Return%"],
                 "Delevered_Sharpe": control_m["Sharpe"],
+                "Delevered_Sortino": control_m["Sortino"],
                 "Delevered_MaxDD%": control_m["MaxDD%"],
                 "DeltaReturn_vs_LongOnly%": round(float(ls_m["Return%"] - long_m["Return%"]), 2),
                 "DeltaReturn_vs_Delevered%": round(float(ls_m["Return%"] - control_m["Return%"]), 2),
                 "DeltaSharpe_vs_LongOnly": round(float(ls_m["Sharpe"] - long_m["Sharpe"]), 4),
                 "DeltaSharpe_vs_Delevered": round(float(ls_m["Sharpe"] - control_m["Sharpe"]), 4),
+                "DeltaSortino_vs_LongOnly": round(float(ls_m["Sortino"] - long_m["Sortino"]), 4),
+                "DeltaSortino_vs_Delevered": round(float(ls_m["Sortino"] - control_m["Sortino"]), 4),
                 "DeltaMaxDD_vs_LongOnly%": round(float(ls_m["MaxDD%"] - long_m["MaxDD%"]), 2),
                 "DeltaMaxDD_vs_Delevered%": round(float(ls_m["MaxDD%"] - control_m["MaxDD%"]), 2),
             }
@@ -395,23 +399,33 @@ def build_allocator_response_fast(wf: Dict[str, Any], cfg: Mahoraga15AConfig) ->
         "realized_vol_pressure",
         "stress_intensity",
         "directional_bear",
+        "crisis_activation",
+        "crisis_transition",
+        "crisis_persistence",
+        "transition_shock",
         "target_beta_qqq",
         "target_beta_spy",
         "beta_gap_qqq",
         "beta_gap_spy",
         "hedge_permission",
+        "reaction_multiplier",
         "long_budget",
+        "crisis_short_budget",
         "systematic_short_budget",
         "cash_buffer",
         "net_exposure",
         "gross_exposure",
+        "short_cap_dynamic",
+        "net_exposure_floor_dynamic",
         "qqq_short_budget",
         "spy_short_budget",
         "predicted_beta_qqq",
         "predicted_beta_spy",
         "short_speed_applied",
+        "reaction_multiplier_applied",
         "long_step_applied",
         "short_step_applied",
+        "short_velocity_state",
         "ShortActive",
         "ShortRegime",
     ]
@@ -524,6 +538,27 @@ def _stress_metrics_row(
     }
 
 
+def _stitch_scenario_ls(
+    wf: Dict[str, Any],
+    cfg: Mahoraga15AConfig,
+    costs,
+    override: Dict[str, float],
+    label_suffix: str,
+):
+    fold_meta = [(p["fold"], p["test_start"], p["test_end"]) for p in wf["ls_fold_payloads"]]
+    fold_objs = []
+    for payload in wf["ls_fold_payloads"]:
+        scenario_costs = deepcopy(costs)
+        if "cost_mult" in override:
+            scenario_costs.commission *= float(override["cost_mult"])
+            scenario_costs.slippage *= float(override["cost_mult"])
+        if "extra_slippage" in override:
+            scenario_costs.slippage += float(override["extra_slippage"])
+        stressed = rebuild_ls_fold(payload, cfg, scenario_costs, override=override)
+        fold_objs.append(stressed["ls_obj"])
+    return stitch_objects(fold_objs, fold_meta, cfg, f"{cfg.ls_label}_{label_suffix}")
+
+
 def build_stress_suite_fast(wf: Dict[str, Any], cfg: Mahoraga15AConfig, costs) -> pd.DataFrame:
     qqq_obj = wf["stitched_benchmarks"]["QQQ"]
     spy_obj = wf["stitched_benchmarks"]["SPY"]
@@ -533,7 +568,7 @@ def build_stress_suite_fast(wf: Dict[str, Any], cfg: Mahoraga15AConfig, costs) -
     rows = [
         _stress_metrics_row(cfg.official_long_label, "BASELINE_LONG_ONLY", "official frozen 14.1 long-only reference", long_base, ls_base, long_base, control_base, qqq_obj, spy_obj, cfg),
         _stress_metrics_row(cfg.delevered_label, "BASELINE_DELEVERED_CONTROL", "path-matched delevered control without real short", control_base, ls_base, long_base, control_base, qqq_obj, spy_obj, cfg),
-        _stress_metrics_row(cfg.ls_label, "BASELINE_15A1", "Mahoraga15A1 unstressed stitched OOS", ls_base, ls_base, long_base, control_base, qqq_obj, spy_obj, cfg),
+        _stress_metrics_row(cfg.ls_label, "BASELINE_15A2", "Mahoraga15A2 unstressed stitched OOS", ls_base, ls_base, long_base, control_base, qqq_obj, spy_obj, cfg),
     ]
     scenarios = [
         ("COST_PLUS_25", {"cost_mult": 1.25}, "commission/slippage x1.25"),
@@ -541,25 +576,18 @@ def build_stress_suite_fast(wf: Dict[str, Any], cfg: Mahoraga15AConfig, costs) -
         ("COST_PLUS_100", {"cost_mult": 2.00}, "commission/slippage x2.00"),
         ("EXTRA_SLIPPAGE", {"extra_slippage": cfg.stress_extra_slippage}, "extra slippage +5bps"),
         ("EXECUTION_DELAY_1_REBALANCE", {"delay_days": 5 * cfg.stress_delay_rebalances}, "delay long budget and hedge one weekly rebalance"),
+        ("EXECUTION_DELAY_2_REBALANCES", {"delay_days": 5 * cfg.stress_delay_rebalances_2}, "delay long budget and hedge two weekly rebalances"),
         ("HEDGE_RATIO_UNDERESTIMATED", {"hedge_ratio_mult": cfg.stress_hedge_ratio_under_mult}, "systematic hedge scaled to 75%"),
         ("HEDGE_RATIO_OVERESTIMATED", {"hedge_ratio_mult": cfg.stress_hedge_ratio_over_mult}, "systematic hedge scaled to 125%"),
         ("REACTION_SLOWER", {"up_speed_mult": cfg.stress_reaction_slower_mult, "down_speed_mult": cfg.stress_reaction_slower_mult}, "allocator reacts slower"),
         ("REACTION_FASTER", {"up_speed_mult": cfg.stress_reaction_faster_mult, "down_speed_mult": cfg.stress_reaction_faster_mult}, "allocator reacts faster"),
+        ("HEDGE_LEAD_1_REBALANCE", {"hedge_shift_days": 5 * cfg.stress_hedge_lead_rebalances}, "shift hedge one rebalance earlier"),
+        ("HEDGE_LAG_1_REBALANCE", {"hedge_shift_days": 5 * cfg.stress_hedge_lag_rebalances}, "shift hedge one rebalance later"),
+        ("HEDGE_LAG_2_REBALANCES", {"hedge_shift_days": 5 * cfg.stress_hedge_lag_rebalances_2}, "shift hedge two rebalances later"),
         ("ALLOCATOR_GATE_VOL_CAP_STRESS", {"short_cap_mult": cfg.stress_allocator_cap_mult, "long_multiplier_mult": cfg.stress_allocator_long_mult}, "tighter allocator caps and lighter long budget"),
     ]
-    fold_meta = [(p["fold"], p["test_start"], p["test_end"]) for p in wf["ls_fold_payloads"]]
     for scenario, override, note in scenarios:
-        fold_objs = []
-        for payload in wf["ls_fold_payloads"]:
-            scenario_costs = deepcopy(costs)
-            if "cost_mult" in override:
-                scenario_costs.commission *= float(override["cost_mult"])
-                scenario_costs.slippage *= float(override["cost_mult"])
-            if "extra_slippage" in override:
-                scenario_costs.slippage += float(override["extra_slippage"])
-            stressed = rebuild_ls_fold(payload, cfg, scenario_costs, override=override)
-            fold_objs.append(stressed["ls_obj"])
-        stitched = stitch_objects(fold_objs, fold_meta, cfg, f"{cfg.ls_label}_{scenario}")
+        stitched = _stitch_scenario_ls(wf, cfg, costs, override, scenario)
         rows.append(_stress_metrics_row(cfg.ls_label, scenario, note, stitched, ls_base, long_base, control_base, qqq_obj, spy_obj, cfg))
     rows.append(
         _stress_metrics_row(
@@ -575,6 +603,88 @@ def build_stress_suite_fast(wf: Dict[str, Any], cfg: Mahoraga15AConfig, costs) -
             cfg,
         )
     )
+    return pd.DataFrame(rows)
+
+
+def build_timing_sensitivity_fast(wf: Dict[str, Any], cfg: Mahoraga15AConfig, stress_df: pd.DataFrame) -> pd.DataFrame:
+    scenarios = [
+        "BASELINE_15A2",
+        "EXECUTION_DELAY_1_REBALANCE",
+        "EXECUTION_DELAY_2_REBALANCES",
+        "REACTION_SLOWER",
+        "REACTION_FASTER",
+        "HEDGE_LEAD_1_REBALANCE",
+        "HEDGE_LAG_1_REBALANCE",
+        "HEDGE_LAG_2_REBALANCES",
+    ]
+    timing_df = stress_df[(stress_df["Variant"] == cfg.ls_label) & (stress_df["Scenario"].isin(scenarios))].copy()
+    if len(timing_df) == 0:
+        return timing_df
+    baseline = timing_df.loc[timing_df["Scenario"] == "BASELINE_15A2"].iloc[0]
+    crisis_windows = build_crisis_windows(wf, cfg)
+    ls_base = wf["stitched_ls"]
+    rows = []
+    for scenario in scenarios:
+        row = timing_df.loc[timing_df["Scenario"] == scenario]
+        if len(row) == 0:
+            continue
+        rec = row.iloc[0].to_dict()
+        if scenario == "BASELINE_15A2":
+            scenario_obj = ls_base
+            scenario_type = "BASELINE_TIMING"
+            shift_rebalances = 0
+        elif scenario.startswith("EXECUTION_DELAY_1"):
+            scenario_obj = _stitch_scenario_ls(wf, cfg, wf["costs"], {"delay_days": 5 * cfg.stress_delay_rebalances}, scenario)
+            scenario_type = "EXECUTION_DELAY"
+            shift_rebalances = cfg.stress_delay_rebalances
+        elif scenario.startswith("EXECUTION_DELAY_2"):
+            scenario_obj = _stitch_scenario_ls(wf, cfg, wf["costs"], {"delay_days": 5 * cfg.stress_delay_rebalances_2}, scenario)
+            scenario_type = "EXECUTION_DELAY"
+            shift_rebalances = cfg.stress_delay_rebalances_2
+        elif scenario == "REACTION_SLOWER":
+            scenario_obj = _stitch_scenario_ls(
+                wf,
+                cfg,
+                wf["costs"],
+                {"up_speed_mult": cfg.stress_reaction_slower_mult, "down_speed_mult": cfg.stress_reaction_slower_mult},
+                scenario,
+            )
+            scenario_type = "REACTION_SPEED"
+            shift_rebalances = 0
+        elif scenario == "REACTION_FASTER":
+            scenario_obj = _stitch_scenario_ls(
+                wf,
+                cfg,
+                wf["costs"],
+                {"up_speed_mult": cfg.stress_reaction_faster_mult, "down_speed_mult": cfg.stress_reaction_faster_mult},
+                scenario,
+            )
+            scenario_type = "REACTION_SPEED"
+            shift_rebalances = 0
+        elif scenario == "HEDGE_LEAD_1_REBALANCE":
+            scenario_obj = _stitch_scenario_ls(wf, cfg, wf["costs"], {"hedge_shift_days": 5 * cfg.stress_hedge_lead_rebalances}, scenario)
+            scenario_type = "HEDGE_LEAD_LAG"
+            shift_rebalances = cfg.stress_hedge_lead_rebalances
+        elif scenario == "HEDGE_LAG_1_REBALANCE":
+            scenario_obj = _stitch_scenario_ls(wf, cfg, wf["costs"], {"hedge_shift_days": 5 * cfg.stress_hedge_lag_rebalances}, scenario)
+            scenario_type = "HEDGE_LEAD_LAG"
+            shift_rebalances = cfg.stress_hedge_lag_rebalances
+        else:
+            scenario_obj = _stitch_scenario_ls(wf, cfg, wf["costs"], {"hedge_shift_days": 5 * cfg.stress_hedge_lag_rebalances_2}, scenario)
+            scenario_type = "HEDGE_LEAD_LAG"
+            shift_rebalances = cfg.stress_hedge_lag_rebalances_2
+
+        crisis_short_values = []
+        for _, start, end in crisis_windows:
+            crisis_short_values.append(float(_series(scenario_obj, "gross_short", 0.0).loc[start:end].mean()))
+        avg_crisis_short = float(np.nanmean(crisis_short_values)) if crisis_short_values else 0.0
+        rec["ScenarioType"] = scenario_type
+        rec["ShiftRebalances"] = shift_rebalances
+        rec["DeltaGrossShort_vs_LSBase"] = round(float(rec["GrossShort"] - baseline["GrossShort"]), 4)
+        rec["DeltaBetaQQQ_vs_LSBase"] = round(float(rec["BetaQQQ"] - baseline["BetaQQQ"]), 4)
+        rec["DeltaBetaSPY_vs_LSBase"] = round(float(rec["BetaSPY"] - baseline["BetaSPY"]), 4)
+        rec["CrisisGrossShortAvg"] = round(avg_crisis_short, 4)
+        rows.append(rec)
     return pd.DataFrame(rows)
 
 
@@ -665,6 +775,7 @@ def build_hedge_effectiveness_fast(
     pnl_attr_df: pd.DataFrame,
     crisis_df: pd.DataFrame,
     stress_df: pd.DataFrame,
+    timing_df: pd.DataFrame,
     cfg: Mahoraga15AConfig,
 ) -> pd.DataFrame:
     comp = comparison_df.set_index("Variant")
@@ -677,8 +788,34 @@ def build_hedge_effectiveness_fast(
     crisis_delta_long = float(crisis_df["DeltaReturn_vs_LongOnly%"].mean()) if len(crisis_df) else 0.0
     reaction_sub = stress_df[stress_df["Scenario"].isin(["REACTION_SLOWER", "REACTION_FASTER"])]
     hedge_ratio_sub = stress_df[stress_df["Scenario"].isin(["HEDGE_RATIO_UNDERESTIMATED", "HEDGE_RATIO_OVERESTIMATED"])]
-    reaction_move = float(reaction_sub["DeltaSharpe_vs_LSBase"].abs().max()) if len(reaction_sub) else 0.0
-    hedge_ratio_move = float(hedge_ratio_sub["DeltaSharpe_vs_LSBase"].abs().max()) if len(hedge_ratio_sub) else 0.0
+    reaction_move = 0.0
+    if len(reaction_sub):
+        reaction_move = max(
+            float(reaction_sub["DeltaSharpe_vs_LSBase"].abs().max()),
+            float(reaction_sub["DeltaCAGR_vs_LSBase%"].abs().max()) / 100.0,
+            float((reaction_sub["GrossShort"] - float(ls["GrossShort"])).abs().max()),
+        )
+    hedge_ratio_move = 0.0
+    if len(hedge_ratio_sub):
+        hedge_ratio_move = max(
+            float(hedge_ratio_sub["DeltaSharpe_vs_LSBase"].abs().max()),
+            float(hedge_ratio_sub["DeltaCAGR_vs_LSBase%"].abs().max()) / 100.0,
+            float((hedge_ratio_sub["GrossShort"] - float(ls["GrossShort"])).abs().max()),
+        )
+    baseline_timing = timing_df[timing_df["Scenario"] == "BASELINE_15A2"]
+    delay_sub = timing_df[timing_df["Scenario"].isin(["EXECUTION_DELAY_1_REBALANCE", "EXECUTION_DELAY_2_REBALANCES"])]
+    lead_lag_sub = timing_df[timing_df["Scenario"].isin(["HEDGE_LEAD_1_REBALANCE", "HEDGE_LAG_1_REBALANCE", "HEDGE_LAG_2_REBALANCES"])]
+    delay_best_sharpe = float(delay_sub["DeltaSharpe_vs_LSBase"].max()) if len(delay_sub) else 0.0
+    delay_best_cagr = float(delay_sub["DeltaCAGR_vs_LSBase%"].max()) if len(delay_sub) else 0.0
+    lead_lag_best_sharpe = float(lead_lag_sub["DeltaSharpe_vs_LSBase"].max()) if len(lead_lag_sub) else 0.0
+    lead_lag_best_cagr = float(lead_lag_sub["DeltaCAGR_vs_LSBase%"].max()) if len(lead_lag_sub) else 0.0
+    lead_lag_move = 0.0
+    if len(lead_lag_sub):
+        lead_lag_move = max(
+            float(lead_lag_sub["DeltaSharpe_vs_LSBase"].abs().max()),
+            float(lead_lag_sub["DeltaCAGR_vs_LSBase%"].abs().max()) / 100.0,
+            float(lead_lag_sub["DeltaGrossShort_vs_LSBase"].abs().max()) if "DeltaGrossShort_vs_LSBase" in lead_lag_sub else 0.0,
+        )
     ls_vs_control_similar = (
         abs(float(ls["Sharpe"] - control["Sharpe"])) <= cfg.fast_fail_similarity_sharpe_tol
         and abs(float(ls["CAGR%"] - control["CAGR%"])) <= cfg.fast_fail_similarity_cagr_tol_pct
@@ -693,6 +830,11 @@ def build_hedge_effectiveness_fast(
         {"Section": "FAST_FAIL", "Metric": "GrossShortCrisisAvg", "Value": crisis_avg_short, "Threshold": cfg.success_crisis_gross_short_min, "Passed": bool(crisis_avg_short >= cfg.success_crisis_gross_short_min), "Detail": "crisis windows should show clearly higher short activity"},
         {"Section": "FAST_FAIL", "Metric": "ReactionStressMoves", "Value": reaction_move, "Threshold": cfg.fast_fail_sensitivity_tol, "Passed": bool(reaction_move > cfg.fast_fail_sensitivity_tol), "Detail": "reaction slower/faster must move the system"},
         {"Section": "FAST_FAIL", "Metric": "HedgeRatioStressMoves", "Value": hedge_ratio_move, "Threshold": cfg.fast_fail_sensitivity_tol, "Passed": bool(hedge_ratio_move > cfg.fast_fail_sensitivity_tol), "Detail": "hedge-ratio stress must move the system"},
+        {"Section": "FAST_FAIL", "Metric": "TimingDelaySharpeImprovement", "Value": delay_best_sharpe, "Threshold": cfg.fast_fail_timing_sharpe_tol, "Passed": bool(delay_best_sharpe <= cfg.fast_fail_timing_sharpe_tol), "Detail": "delay +1/+2 should not improve Sharpe materially over baseline timing"},
+        {"Section": "FAST_FAIL", "Metric": "TimingDelayCAGRImprovementPct", "Value": delay_best_cagr, "Threshold": cfg.fast_fail_timing_cagr_tol_pct, "Passed": bool(delay_best_cagr <= cfg.fast_fail_timing_cagr_tol_pct), "Detail": "delay +1/+2 should not improve CAGR materially over baseline timing"},
+        {"Section": "FAST_FAIL", "Metric": "TimingLeadLagSensitivityMoves", "Value": lead_lag_move, "Threshold": cfg.fast_fail_sensitivity_tol, "Passed": bool(lead_lag_move > cfg.fast_fail_sensitivity_tol), "Detail": "hedge lead/lag sensitivity should move if the crisis sleeve is real"},
+        {"Section": "FAST_FAIL", "Metric": "TimingLeadLagSharpeImprovement", "Value": lead_lag_best_sharpe, "Threshold": cfg.fast_fail_timing_sharpe_tol, "Passed": bool(lead_lag_best_sharpe <= cfg.fast_fail_timing_sharpe_tol), "Detail": "lead/lag should not dominate baseline timing by accident"},
+        {"Section": "FAST_FAIL", "Metric": "TimingLeadLagCAGRImprovementPct", "Value": lead_lag_best_cagr, "Threshold": cfg.fast_fail_timing_cagr_tol_pct, "Passed": bool(lead_lag_best_cagr <= cfg.fast_fail_timing_cagr_tol_pct), "Detail": "lead/lag should not dominate baseline timing on CAGR"},
         {"Section": "FAST_FAIL", "Metric": "LSNotSameAsDeleveredControl", "Value": int(not ls_vs_control_similar), "Threshold": 1.0, "Passed": bool(not ls_vs_control_similar), "Detail": "LS should not be almost identical to delevered control"},
         {"Section": "FAST_FAIL", "Metric": "HedgePnLRelevant", "Value": float(abs(stitched_pnl["PnLSystematicHedgePctInit"])), "Threshold": 0.0025, "Passed": bool(abs(float(stitched_pnl["PnLSystematicHedgePctInit"])) >= 0.0025), "Detail": "systematic hedge PnL should be non-trivial"},
         {"Section": "FAST_FAIL", "Metric": "MicroscopicSharpeWithCAGRDrop", "Value": int(not microscopic_sharpe_with_cagr_drop), "Threshold": 1.0, "Passed": bool(not microscopic_sharpe_with_cagr_drop), "Detail": "microscopic Sharpe gain cannot justify a large CAGR drop"},
@@ -821,7 +963,7 @@ def generate_figures(wf: Dict[str, Any], cfg: Mahoraga15AConfig, beta_df: pd.Dat
     _save_figure(fig, path)
     paths["gross_exposure_and_cash"] = str(path)
 
-    stress_plot = stress_df[(stress_df["Variant"] == cfg.ls_label) & (~stress_df["Scenario"].isin(["BASELINE_15A1"]))].copy()
+    stress_plot = stress_df[(stress_df["Variant"] == cfg.ls_label) & (~stress_df["Scenario"].isin(["BASELINE_15A2"]))].copy()
     if len(stress_plot):
         fig, axes = plt.subplots(1, 2, figsize=(11, 4.8))
         axes[0].barh(stress_plot["Scenario"], stress_plot["DeltaSharpe_vs_LSBase"], color="#E45756")
@@ -834,7 +976,7 @@ def generate_figures(wf: Dict[str, Any], cfg: Mahoraga15AConfig, beta_df: pd.Dat
     return paths
 
 
-def build_fast_report_text(comparison_df: pd.DataFrame, delevered_df: pd.DataFrame, pq_df: pd.DataFrame, pnl_attr_df: pd.DataFrame, crisis_df: pd.DataFrame, hedge_effectiveness_df: pd.DataFrame, stress_df: pd.DataFrame, mc_df: pd.DataFrame, audit_df: pd.DataFrame, cfg: Mahoraga15AConfig) -> str:
+def build_fast_report_text(comparison_df: pd.DataFrame, delevered_df: pd.DataFrame, pq_df: pd.DataFrame, pnl_attr_df: pd.DataFrame, crisis_df: pd.DataFrame, timing_df: pd.DataFrame, hedge_effectiveness_df: pd.DataFrame, stress_df: pd.DataFrame, mc_df: pd.DataFrame, audit_df: pd.DataFrame, cfg: Mahoraga15AConfig) -> str:
     failed_fast = audit_df[(audit_df["Section"] == "FAST_FAIL") & (~audit_df["Passed"])]
     success_rows = audit_df[audit_df["Section"] == "SUCCESS_CHECK"]
     if len(failed_fast):
@@ -845,7 +987,7 @@ def build_fast_report_text(comparison_df: pd.DataFrame, delevered_df: pd.DataFra
         thesis_status = "INCONCLUSIVE"
 
     lines = [
-        "# Mahoraga15A1 FAST",
+        "# Mahoraga15A2 FAST",
         "",
         f"## Thesis status: {thesis_status}",
         "",
@@ -867,14 +1009,17 @@ def build_fast_report_text(comparison_df: pd.DataFrame, delevered_df: pd.DataFra
         "## 6. Hedge effectiveness / fail-fast",
         hedge_effectiveness_df.to_string(index=False),
         "",
-        "## 7. Stress suite",
+        "## 7. Timing sensitivity",
+        timing_df.to_string(index=False),
+        "",
+        "## 8. Stress suite",
         stress_df.to_string(index=False),
         "",
-        "## 8. Monte Carlo / bootstrap",
+        "## 9. Monte Carlo / bootstrap",
         mc_df.to_string(index=False),
     ]
     if len(failed_fast):
-        lines.extend(["", "## 9. Explicit failure flags", failed_fast[["Metric", "Value", "Threshold", "Detail"]].to_string(index=False)])
+        lines.extend(["", "## 10. Explicit failure flags", failed_fast[["Metric", "Value", "Threshold", "Detail"]].to_string(index=False)])
     return "\n".join(lines)
 
 
@@ -890,14 +1035,16 @@ def save_fast_outputs(wf: Dict[str, Any], cfg: Mahoraga15AConfig, costs) -> Dict
     crisis_df = build_crisis_window_scorecard_fast(wf, cfg, pnl_attr_df)
     short_activity_df = build_short_activity_summary_fast(wf, cfg, pnl_attr_df)
     stress_df = build_stress_suite_fast(wf, cfg, costs)
+    timing_df = build_timing_sensitivity_fast(wf, cfg, stress_df)
     mc_summary_df, mc_samples_df = build_montecarlo_summary_fast(wf, cfg, costs)
-    hedge_effectiveness_df = build_hedge_effectiveness_fast(comparison_df, pnl_attr_df, crisis_df, stress_df, cfg)
+    hedge_effectiveness_df = build_hedge_effectiveness_fast(comparison_df, pnl_attr_df, crisis_df, stress_df, timing_df, cfg)
     audit_df = build_candidate_audit_fast(wf, cfg, pq_df, hedge_effectiveness_df)
     figure_paths = generate_figures(wf, cfg, beta_df, exposure_df, stress_df)
-    report_text = build_fast_report_text(comparison_df, delevered_df, pq_df, pnl_attr_df, crisis_df, hedge_effectiveness_df, stress_df, mc_summary_df, audit_df, cfg)
+    report_text = build_fast_report_text(comparison_df, delevered_df, pq_df, pnl_attr_df, crisis_df, timing_df, hedge_effectiveness_df, stress_df, mc_summary_df, audit_df, cfg)
 
     comparison_df.to_csv(Path(cfg.outputs_dir) / "ls_stitched_comparison_fast.csv", index=False)
     delevered_df.to_csv(Path(cfg.outputs_dir) / "ls_delevered_control_fast.csv", index=False)
+    pq_df.to_csv(Path(cfg.outputs_dir) / "ls_pairwise_pq_fast.csv", index=False)
     beta_df.to_csv(Path(cfg.outputs_dir) / "ls_beta_decomposition_fast.csv", index=False)
     exposure_df.to_csv(Path(cfg.outputs_dir) / "ls_gross_net_exposure_fast.csv", index=False)
     allocator_df.to_csv(Path(cfg.outputs_dir) / "ls_allocator_response_fast.csv", index=False)
@@ -905,6 +1052,7 @@ def save_fast_outputs(wf: Dict[str, Any], cfg: Mahoraga15AConfig, costs) -> Dict
     crisis_df.to_csv(Path(cfg.outputs_dir) / "ls_crisis_window_scorecard_fast.csv", index=False)
     short_activity_df.to_csv(Path(cfg.outputs_dir) / "ls_short_activity_summary_fast.csv", index=False)
     hedge_effectiveness_df.to_csv(Path(cfg.outputs_dir) / "ls_hedge_effectiveness_fast.csv", index=False)
+    timing_df.to_csv(Path(cfg.outputs_dir) / "ls_timing_sensitivity_fast.csv", index=False)
     stress_df.to_csv(Path(cfg.outputs_dir) / "ls_stress_suite_fast.csv", index=False)
     mc_summary_df.to_csv(Path(cfg.outputs_dir) / "ls_montecarlo_summary_fast.csv", index=False)
     audit_df.to_csv(Path(cfg.outputs_dir) / "ls_candidate_audit_fast.csv", index=False)
@@ -921,6 +1069,7 @@ def save_fast_outputs(wf: Dict[str, Any], cfg: Mahoraga15AConfig, costs) -> Dict
         "crisis_window_scorecard": crisis_df,
         "short_activity_summary": short_activity_df,
         "hedge_effectiveness": hedge_effectiveness_df,
+        "timing_sensitivity": timing_df,
         "stress_suite": stress_df,
         "montecarlo_summary": mc_summary_df,
         "candidate_audit": audit_df,
