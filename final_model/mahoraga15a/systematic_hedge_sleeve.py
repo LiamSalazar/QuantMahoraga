@@ -33,13 +33,23 @@ def _cap_mix(weights: np.ndarray, max_share: float) -> np.ndarray:
     return np.clip(weights, 0.0, None)
 
 
+def _crisis_floor_size(crisis_activation: float, short_cap_dynamic: float, cfg: Mahoraga15AConfig) -> float:
+    if crisis_activation <= cfg.hedge_crisis_onset:
+        return 0.0
+    normalized = (crisis_activation - cfg.hedge_crisis_onset) / max(1e-6, 1.0 - cfg.hedge_crisis_onset)
+    return float(short_cap_dynamic * cfg.hedge_overlay_floor_scale * normalized ** cfg.hedge_crisis_floor_power)
+
+
 def build_raw_hedge_plan(
     state: pd.DataFrame,
     controls: pd.DataFrame,
     cfg: Mahoraga15AConfig,
 ) -> pd.DataFrame:
     rows = []
-    for dt, row in state.join(controls).iterrows():
+    merged = state.copy()
+    for col in controls.columns:
+        merged[col] = controls[col]
+    for dt, row in merged.iterrows():
         long_mult_target = float(row["long_multiplier_target"])
         long_beta_qqq_scaled = float(row["long_beta_qqq"] * long_mult_target)
         long_beta_spy_scaled = float(row["long_beta_spy"] * long_mult_target)
@@ -57,26 +67,34 @@ def build_raw_hedge_plan(
             ).iloc[0]
         )
 
+        crisis_activation = float(row["crisis_activation"])
+        crisis_transition = float(row["crisis_transition"])
+        crisis_persistence = float(row["crisis_persistence"])
+        continuation_relief = float(row["continuation_relief"])
+        benchmark_weakness = float(row["benchmark_weakness"])
+        fragility_permission = float(
+            clip01(
+                0.45 * row["structural_fragility"]
+                + 0.25 * row["realized_vol_pressure"]
+                + 0.15 * crisis_activation
+                + 0.15 * row["break_risk"]
+            ).iloc[0]
+        )
         directional_permission = float(
             clip01(
                 cfg.hedge_directional_floor
-                + 0.45 * row["benchmark_weakness"]
-                + 0.30 * row["bear_persistence"]
-                + 0.25 * row["break_risk"]
-                - 0.35 * row["continuation_relief"]
-            ).iloc[0]
-        )
-        fragility_permission = float(
-            clip01(
-                0.50 * row["structural_fragility"] + 0.30 * row["stress_intensity"] + 0.20 * row["realized_vol_pressure"]
+                + 0.40 * benchmark_weakness
+                + 0.35 * crisis_persistence
+                + 0.25 * crisis_transition
+                - 0.40 * continuation_relief
             ).iloc[0]
         )
         hedge_permission = float(
             clip01(
-                cfg.hedge_permission_floor
-                + 0.45 * beta_gap_score
-                + 0.30 * fragility_permission
-                + 0.25 * directional_permission
+                0.20 * beta_gap_score
+                + 0.35 * crisis_activation
+                + 0.25 * fragility_permission
+                + 0.20 * directional_permission
             ).iloc[0]
         )
 
@@ -87,11 +105,35 @@ def build_raw_hedge_plan(
             ],
             dtype=float,
         )
-        raw = _solve_non_negative_ridge(a, gap, cfg.hedge_solver_ridge)
+        beta_raw = _solve_non_negative_ridge(a, gap, cfg.hedge_solver_ridge)
+        beta_raw = _cap_mix(beta_raw, cfg.hedge_max_single_name_share)
+        beta_budget = float(beta_raw.sum()) * (cfg.hedge_overlay_beta_weight * hedge_permission)
+
+        crisis_floor_budget = _crisis_floor_size(crisis_activation, float(row["short_cap_dynamic"]), cfg)
+        overlay_floor_budget = crisis_floor_budget * clip01(
+            cfg.hedge_overlay_crisis_weight * directional_permission
+            + (1.0 - cfg.hedge_overlay_crisis_weight) * crisis_transition
+        ).iloc[0]
+
+        qqq_overlay_share = float(row.get("qqq_overlay_share", 0.55))
+        qqq_overlay_share = float(np.clip(qqq_overlay_share, 0.20, 0.80))
+        overlay_mix = np.array([qqq_overlay_share, 1.0 - qqq_overlay_share], dtype=float)
+
+        if beta_raw.sum() > 1e-12:
+            beta_mix = beta_raw / beta_raw.sum()
+        else:
+            beta_mix = overlay_mix
+
+        raw_budget = max(beta_budget, overlay_floor_budget)
+        if overlay_floor_budget > beta_budget:
+            mix = 0.65 * overlay_mix + 0.35 * beta_mix
+        else:
+            mix = 0.75 * beta_mix + 0.25 * overlay_mix
+        mix = np.clip(mix, 0.0, None)
+        mix = mix / mix.sum() if mix.sum() > 1e-12 else np.array([0.5, 0.5], dtype=float)
+
+        raw = raw_budget * mix
         raw = _cap_mix(raw, cfg.hedge_max_single_name_share)
-        raw_budget_unscaled = float(raw.sum())
-        if raw_budget_unscaled > 1e-12:
-            raw = raw * (hedge_permission * raw_budget_unscaled / raw_budget_unscaled)
         raw_budget = float(raw.sum())
 
         projected_beta_qqq = long_beta_qqq_scaled - (raw[0] + raw[1] * float(row["spy_beta_qqq"]))
@@ -108,6 +150,8 @@ def build_raw_hedge_plan(
                 "raw_long_beta_spy_scaled": long_beta_spy_scaled,
                 "raw_beta_gap_qqq": float(gap[0]),
                 "raw_beta_gap_spy": float(gap[1]),
+                "raw_beta_budget": beta_budget,
+                "raw_crisis_floor_budget": overlay_floor_budget,
                 "hedge_directional_permission": directional_permission,
                 "hedge_fragility_permission": fragility_permission,
                 "hedge_permission": hedge_permission,

@@ -14,5 +14,6 @@ rebuild_ls_fold = _BACKTEST_MODULE.rebuild_ls_fold
 run_walk_forward_mahoraga15a = _BACKTEST_MODULE.run_walk_forward_mahoraga15a
 
 run_walk_forward_mahoraga15a1 = run_walk_forward_mahoraga15a
+run_walk_forward_mahoraga15a2 = run_walk_forward_mahoraga15a
 
-__all__ = ["run_walk_forward_mahoraga15a", "run_walk_forward_mahoraga15a1", "rebuild_ls_fold"]
+__all__ = ["run_walk_forward_mahoraga15a", "run_walk_forward_mahoraga15a1", "run_walk_forward_mahoraga15a2", "rebuild_ls_fold"]
