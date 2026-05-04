@@ -5,28 +5,45 @@ from pathlib import Path
 from typing import Dict, Tuple
 
 import mahoraga6_1 as m6
+from shared.pathing import discover_repo_layout
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+_LAYOUT = discover_repo_layout(__file__)
+
+
+def _baseline_root() -> Path:
+    return _LAYOUT.baseline_package_root("mahoraga14_3_baseline")
 
 
 @dataclass
 class Mahoraga14Config(m6.Mahoraga6Config):
-    variant: str = "14.3R_promotion_gate"
-    label: str = "MAHORAGA_14_3R_PROMOTION_GATE"
-    cache_dir: str = field(default_factory=lambda: str(_project_root() / "data_cache"))
-    outputs_dir: str = field(default_factory=lambda: str(_project_root() / "mahoraga14_3R_promotion_gate_outputs"))
-    plots_dir: str = field(default_factory=lambda: str(_project_root() / "mahoraga14_3R_promotion_gate_plots"))
+    variant: str = "14.3_baseline"
+    label: str = "MAHORAGA_14_3_BASELINE_OFFICIAL"
+    baseline_name: str = "mahoraga14_3_baseline"
+    cache_dir: str = field(default_factory=lambda: str(_LAYOUT.data_cache_root))
+    outputs_dir: str = field(default_factory=lambda: str(_baseline_root() / "outputs"))
+    plots_dir: str = field(default_factory=lambda: str(_baseline_root() / "outputs" / "figures"))
+    audit_dir: str = field(default_factory=lambda: str(_baseline_root() / "audit"))
+    paper_pack_dir: str = field(default_factory=lambda: str(_baseline_root() / "paper_pack"))
+    docs_dir: str = field(default_factory=lambda: str(_baseline_root() / "docs"))
+    manifests_dir: str = field(default_factory=lambda: str(_baseline_root() / "manifests"))
+    config_dir: str = field(default_factory=lambda: str(_baseline_root() / "config"))
     official_baseline_label: str = "BASE_ALPHA_V2"
     historical_benchmark_label: str = "LEGACY"
-    model_label: str = "M14_3R_PROMOTION_GATE"
+    model_label: str = "M14_3_BASELINE_OFFICIAL"
     main_variant_key: str = "STRUCTURAL_DEFENSE_ONLY"
     continuation_variant_key: str = "CONTINUATION_PRESSURE_V2_ONLY"
     combo_variant_key: str = "MAHORAGA14_3_LONG_PARTICIPATION"
     full_primary_variant_key: str = "MAHORAGA14_3_LONG_PARTICIPATION"
     primary_variant_key: str = "MAHORAGA14_3_LONG_PARTICIPATION"
     control_variant_key: str = "CONTINUATION_PRESSURE_V2_ONLY"
+    official_candidate_id: str = "B1.05_C1.10_L1.10_R1.05"
+    official_budget_multiplier: float = 1.05
+    official_conviction_multiplier: float = 1.10
+    official_leader_multiplier: float = 1.10
+    official_backoff_strength: float = 1.05
+    official_reference_version: str = "Mahoraga14_3R / ROBUST_MAIN / B1.05_C1.10_L1.10_R1.05"
+    replaced_baseline: str = "Mahoraga14_1_LONG_ONLY_CONTROL"
 
     weight_cap: float = 0.60
     k_atr: float = 3.0
