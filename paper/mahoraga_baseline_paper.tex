@@ -1,0 +1,337 @@
+\documentclass[11pt,letterpaper]{article}
+
+\usepackage[spanish,es-tabla]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{microtype}
+\usepackage{setspace}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{makecell}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{adjustbox}
+\usepackage{enumitem}
+\usepackage{csquotes}
+\usepackage[round,authoryear]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage[nameinlink,noabbrev]{cleveref}
+\usepackage[section]{placeins}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{pdflscape}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+\geometry{margin=1in}
+\onehalfspacing
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.45em}
+\setlist[itemize]{topsep=0.25em,itemsep=0.25em}
+\setlist[enumerate]{topsep=0.25em,itemsep=0.25em}
+\captionsetup{font=small,labelfont=bf}
+\graphicspath{{figures/}}
+
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\baselinepkg}{\code{mahoraga14_3_baseline}}
+\newcommand{\officiallabel}{\code{MAHORAGA14_3_BASELINE_OFFICIAL}}
+\newcommand{\officialcandidate}{\code{B1.05_C1.10_L1.10_R1.05}}
+\newcommand{\historicalcontrol}{\code{MAHORAGA14_1_LONG_ONLY_CONTROL}}
+\newcommand{\primaryvariant}{\code{MAHORAGA14_3_LONG_PARTICIPATION}}
+\newcommand{\controlvariant}{\code{CONTINUATION_PRESSURE_V2_ONLY}}
+\newcommand{\basealpha}{\code{BASE_ALPHA_V2}}
+\newcommand{\allocator}{\code{PARTICIPATION_ALLOCATOR_V2}}
+\newcommand{\conviction}{\code{CONVICTION_AMPLIFIER_LAYER}}
+\newcommand{\leaderlayer}{\code{LEADER_PARTICIPATION_LAYER}}
+\newcommand{\backoff}{\code{RISK_BACKOFF_LAYER_V2}}
+
+\title{\textbf{Mahoraga como sistema quant general}\\
+\large Arquitectura, logica operativa y auditoria del baseline oficial long-only congelado}
+\author{Documento tecnico reproducible basado en el baseline oficial del repositorio QuantMahoraga}
+\date{4 de mayo de 2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\clearpage
+
+\begin{abstract}
+Este documento describe Mahoraga como sistema cuantitativo general y toma como culminacion operativa el baseline institucional congelado \officiallabel, publicado en el paquete \baselinepkg. El objetivo no es presentar una narrativa promocional ni reducir el proyecto a una comparacion aislada de rentabilidades, sino reconstruir de forma verificable que hace el sistema, que datos usa, como transforma informacion en decisiones, como asigna capital, que reglas limitan su conducta y como se audita formalmente.
+
+El paper separa con rigor cuatro niveles que en proyectos cuantitativos suelen confundirse: (i) la arquitectura conceptual del sistema, (ii) los componentes efectivamente implementados en la ruta oficial, (iii) la historia de investigacion que llevo al baseline final y (iv) las intuiciones conceptuales que inspiraron parte del diseno pero no quedaron como modulos operativos. Esta distincion es especialmente importante en Mahoraga porque el baseline oficial no es una rama abierta de descubrimiento, sino una congelacion institucional de una arquitectura long-only promovida desde la familia 14.3R con cuatro multiplicadores aceptados localmente.
+
+En terminos operativos, Mahoraga combina un nucleo de seleccion de acciones long-only basado en tendencia, momentum y residualizacion multifactor con una capa semanal de lectura de estado del mercado y del libro propio. Esa segunda capa no inventa alpha de seleccion; traduce evidencia de continuidad, amplitud, fragilidad, liderazgo y deterioro estructural en presupuesto de participacion, caps de exposicion, mezclas hacia lideres y mecanismos de backoff. El baseline publicado usa modelos de regresion logistica y un challenger de random forest en partes concretas del filtro temporal, pero no descansa en aprendizaje profundo, reinforcement learning ni IA generativa.
+
+El documento tambien explica la metodologia de validacion: walk-forward, stitched OOS, ventanas prioritarias, leave-one-window-out, bootstrap por bloques estacionarios y una guarda de seleccion estilo reality-check sobre la familia local de candidatos. Los resultados oficiales reportados se toman exclusivamente de los outputs y auditorias congelados del repositorio. El stitched oficial del baseline presenta CAGR de 32.5518\%, Sharpe de 1.4826, Sortino de 2.5280 y MaxDD de -16.1997\%; sin embargo, este paper insiste en que esos numeros deben leerse junto con sus restricciones metodologicas, especialmente sesgo de supervivencia residual, dependencia de un universo concentrado y el hecho de que la promocion se defiende como punto robusto de una meseta local, no como optimo global probado.
+\end{abstract}
+
+\section{Introduccion}
+Mahoraga es un proyecto cuantitativo que, en su estado oficial actual, debe entenderse como un \emph{sistema} y no como una formula unica. El baseline congelado del repositorio declara explicitamente que el modelo oficial es \officiallabel, congelado desde la referencia \code{Mahoraga14_3R / ROBUST_MAIN / B1.05_C1.10_L1.10_R1.05}, y destinado a servir como reemplazo institucional del control long-only previo \historicalcontrol \citep{quantBaselineDocs2026,quantGovernance2026}. Esta formulacion ya sugiere tres hechos importantes:
+
+\begin{itemize}
+    \item el baseline oficial es long-only;
+    \item el baseline oficial es una congelacion gobernada, no una rama abierta de experimentacion;
+    \item la unidad de analisis correcta no es un unico clasificador o una unica senal, sino una arquitectura con capas.
+\end{itemize}
+
+La pregunta central de este paper es, por tanto, la siguiente: \emph{como funciona Mahoraga, de extremo a extremo, en la version que el repositorio reconoce como baseline oficial?}
+
+Responder esa pregunta exige ir mas alla del resultado stitched final. Hace falta distinguir entre el nucleo de seleccion de nombres, las capas de participacion alcista, los mecanismos de defensa, la logica de exposicion, la ruta de backtesting, los artefactos de auditoria y el proceso institucional que convierte una familia local de candidatos en un baseline congelado. El repositorio contiene ademas ramas historicas de investigacion y algunas intuiciones conceptuales fuertes; el reto es no confundirlas con implementacion efectiva.
+
+\begin{center}
+\fbox{\begin{minipage}{0.95\linewidth}
+\textbf{Politica de evidencia del documento.} Toda afirmacion tecnica de este paper se apoya en uno o mas de los siguientes conjuntos: (i) codigo del paquete \baselinepkg, (ii) documentacion oficial dentro de \code{baseline/mahoraga14_3_baseline/docs}, (iii) outputs oficiales dentro de \code{baseline/mahoraga14_3_baseline/outputs} y (iv) auditorias oficiales dentro de \code{baseline/mahoraga14_3_baseline/audit}. Cuando una idea pertenece a ramas historicas o solo sobrevive como analogia conceptual, se indica de forma explicita.
+\end{minipage}}
+\end{center}
+
+Este texto esta pensado para un lector con base cuantitativa basica o intermedia. La meta no es solo describir el baseline, sino dejarlo suficientemente claro como para que pueda reconstruirse, modificarse o ampliarse con disciplina metodologica.
+
+\section{Motivacion del problema}
+El baseline oficial nace para resolver un problema concreto: construir un benchmark institucional long-only capaz de seleccionar nombres y gestionar participacion sin caer en dos extremos frecuentes.
+
+El primer extremo es el de los modelos demasiado simples: seleccionan momentum o tendencia y despues dejan que la exposicion agregada quede determinada por esa misma seleccion, sin una capa explicita que gobierne cuando conviene empujar participacion, cuando conservar caja y cuando retroceder. El segundo extremo es el de las arquitecturas excesivamente flexibles: incorporan multiples familias de senales, nuevos modelos y combinaciones de parametros hasta hacer dificil distinguir robustez de ajuste oportunista.
+
+Mahoraga intenta situarse entre ambos. Mantiene un nucleo interpretable de stock selection y le agrega una capa semanal de lectura de estado que responde preguntas muy concretas:
+
+\begin{itemize}
+    \item si el mercado y el propio libro estan sanos, \emph{cuanto} capital debe desplegarse;
+    \item si los lideres estan escapando del libro base, \emph{cuanto} conviene inclinarse hacia ellos;
+    \item si la estructura del camino empeora, \emph{cuanto} debe reducirse la participacion;
+    \item si hay continuidad positiva, \emph{cuando} se permite una traduccion mas fuerte desde conviccion hacia exposicion.
+\end{itemize}
+
+La motivacion economica es coherente con la literatura de momentum y tendencia: la persistencia de retornos, la continuidad relativa frente al benchmark y la concentracion del liderazgo pueden generar continuidad explotable \citep{jegadeeshTitman1993,moskowitzOoiPedersen2012,asnessMoskowitzPedersen2013}. Pero la motivacion operacional del baseline no es maximizar una tesis abstracta, sino producir una version institucionalmente gobernable y auditada de esa idea.
+
+\section{Que es Mahoraga como modelo quant}
+Mahoraga puede definirse, en la version oficial, como un sistema quant long-only de dos niveles:
+
+\begin{enumerate}
+    \item un nivel de \textbf{seleccion base} que decide que nombres merecen estar en cartera y con que pesos 1x antes de overlays de capital;
+    \item un nivel de \textbf{traduccion de contexto a participacion} que decide con que intensidad debe escalarse ese libro, cuanto sesgo adicional hacia lideres es razonable y cuanto debe recortarse cuando el regimen se deteriora.
+\end{enumerate}
+
+No es un sistema de market making, no es un modelo intradiario, no es un modelo de derivados y no es una arquitectura long-short. Tampoco es, en el baseline oficial, un laboratorio de nuevas familias de ML. La documentacion oficial lo delimita como \enquote{institutional long-only benchmark replacement and future long-side research starting point} y declara fuera de alcance \enquote{short-side deployment, new-thesis discovery, or uncontrolled parameter search inside the official baseline package} \citep{quantBaselineDocs2026}.
+
+\begin{table}[H]
+\centering
+\caption{Hechos basicos del baseline oficial}
+\label{tab:baseline-facts}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.30\textwidth}X}
+\toprule
+\textbf{Aspecto} & \textbf{Valor verificado} \\
+\midrule
+Paquete oficial & \baselinepkg \\
+Etiqueta oficial publicada & \officiallabel \\
+Referencia congelada & \code{Mahoraga14_3R / ROBUST_MAIN / B1.05_C1.10_L1.10_R1.05} \\
+Candidato oficial & \officialcandidate \\
+Baseline reemplazado & \historicalcontrol \\
+Arquitectura declarada & \basealpha{} $+$ \allocator{} $+$ \conviction{} $+$ \leaderlayer{} $+$ \backoff{} $+$ continuation como filtro de calidad \\
+Clase de cartera & Long-only, sin shorts ni hedges \\
+Horizonte de decision & Rebalanceo semanal con series diarias subyacentes \\
+Unidad de publicacion de resultados & Stitched OOS y auditoria oficial del candidato promovido \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Hay ademas una sutileza relevante. La ruta operativa que produce el libro primario de la arquitectura usa la etiqueta \primaryvariant. Los outputs publicados como \officiallabel{} se construyen en \code{official_baseline_suite.py} aplicando la congelacion institucional sobre la familia local de candidatos promovidos. En otras palabras, el baseline oficial no es solamente una corrida bruta del libro \primaryvariant, sino la expresion institucional del candidato \officialcandidate{} dentro de la familia local congelada.
+
+\section{Historia de investigacion y evolucion hasta la version final}
+El repositorio separa con claridad \code{baseline/} y \code{research/}. Esa separacion no es cosmetica: indica que una cosa es la referencia oficial y otra distinta las ramas historicas que condujeron a ella \citep{quantGovernance2026,quantResearchLineage2026}.
+
+\begin{table}[H]
+\centering
+\caption{Linea historica relevante para el baseline oficial}
+\label{tab:history}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.13\textwidth} >{\raggedright\arraybackslash}p{0.21\textwidth} X}
+\toprule
+\textbf{Etapa} & \textbf{Estado} & \textbf{Papel en la historia} \\
+\midrule
+\code{14.1} & Control historico & Baseline long-only previo, heredero del nucleo de seleccion base y usado como referencia documental de reemplazo. \\
+\code{14.2} & Research archivado & Explora una primera tesis de bull participation; no es baseline oficial. \\
+\code{14.3} & Research archivado & Introduce con mayor madurez la tesis de conviction amplification y leader participation sobre la base 14.x. \\
+\code{14.3R} & Research de acceptance/robustness & Congela la arquitectura 14.3 y restringe la aceptacion a cuatro multiplicadores interpretablemente auditables. \\
+\baselinepkg & Baseline oficial & Promociona el candidato \officialcandidate{} y lo publica como baseline institucional long-only. \\
+\code{15A} & Research fuera de alcance & Explora sleeves adicionales, incluyendo short-side; no forma parte del baseline final. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+La rama 14.3R es particularmente importante porque establece la disciplina que luego hereda el baseline oficial. La idea no fue reabrir toda la arquitectura a una nueva busqueda, sino fijar el diseno 14.3 y permitir solo una vecindad pequena de cuatro multiplicadores:
+
+\begin{itemize}
+    \item multiplicador de presupuesto;
+    \item multiplicador de conviccion;
+    \item multiplicador de participacion en lideres;
+    \item intensidad de backoff.
+\end{itemize}
+
+La familia local resultante contiene \(3 \times 3 \times 3 \times 3 = 81\) puntos. El baseline oficial publica como candidato final el punto \officialcandidate{}, documentado como \code{ROBUST_MAIN} \citep{quantOfficialAudits2026}. Esto importa metodologicamente: la promocion oficial no reinterpreta 14.3R como descubrimiento libre, sino como \emph{congelacion de arquitectura + aceptacion de vecindad local}.
+
+\section{Fundamentos conceptuales}
+
+\subsection{Fundamento economico}
+El nucleo economico de Mahoraga descansa en regularidades conocidas de tendencia y momentum. La idea de que activos con buen desempeno relativo o absoluto tienden, en ciertos horizontes, a seguir rindiendo mejor que otros tiene amplio respaldo empirico \citep{jegadeeshTitman1993,moskowitzOoiPedersen2012,asnessMoskowitzPedersen2013}. En Mahoraga esa intuicion aparece de cuatro maneras.
+
+Primero, el sistema usa senales clasicas de tendencia y momentum sobre precios ajustados. Segundo, incorpora momentum relativo frente a \code{QQQ}, lo que en un universo concentrado de tecnologia sirve como referencia de si un nombre lidera o solo acompana al benchmark. Tercero, residualiza retornos contra un pequeño conjunto de factores internos y externos para intentar separar movimiento de mercado compartido de movimiento propio del activo. Cuarto, reconoce que la calidad del camino importa: no es lo mismo una subida limpia y persistente que una subida erratica, con stops frecuentes, amplitud debil o deterioro de correlacion.
+
+La parte de participacion intenta capturar una intuicion adicional: en mercados alcistas concentrados, parte del costo de un sistema prudente es \emph{cash drag}. Si el libro base y sus overlays defensivos dejan demasiada caja en fases de liderazgo fuerte, el sistema puede quedar por detras del benchmark aun cuando seleccione nombres razonables. Por eso Mahoraga incorpora un modulador que intenta recuperar participacion cuando ve continuidad, salud de amplitud y oportunidad de lideres.
+
+\subsection{Fundamento matematico}
+La arquitectura usa herramientas relativamente sobrias y transparentes:
+
+\begin{itemize}
+    \item medias exponenciales para tendencia;
+    \item retornos acumulados simples para momentum;
+    \item estandarizacion \emph{cross-sectional} por fecha;
+    \item residualizacion rolling con ridge;
+    \item asignacion de pesos mediante \emph{hierarchical risk parity} (HRP);
+    \item clasificadores probabilisticos simples para componentes temporales;
+    \item pruebas de alpha con matriz HAC de Newey--West \citep{neweyWest1987};
+    \item bootstrap por bloques estacionarios \citep{politisRomano1994};
+    \item correccion de multiples pruebas via Benjamini--Yekutieli \citep{benjaminiYekutieli2001}.
+\end{itemize}
+
+El sistema evita una optimizacion global de alta dimension en la version oficial. En vez de eso, combina reglas, scores lineales y unas pocas capas aprendidas localmente.
+
+\subsection{Fundamento estadistico}
+Desde el punto de vista estadistico, Mahoraga intenta limitar dos riesgos:
+
+\begin{itemize}
+    \item sobreinterpretar un mismo periodo historico como si fuera un holdout perpetuamente virgen;
+    \item confundir el mejor punto observado de una familia de candidatos con robustez real.
+\end{itemize}
+
+La primera defensa es el walk-forward con ventanas explicitas, embargo y stitching OOS. La segunda es una bateria de auditorias: ventanas prioritarias, leave-one-window-out, bootstrap por bloques y una guarda estilo reality-check sobre la familia local de aceptacion \citep{white2000,quantOfficialAudits2026}. El propio repositorio advierte que esto hace al baseline \enquote{defendable, not proven immune to overfitting} \citep{quantBaselineDocs2026}.
+
+\subsection{Fundamento computacional}
+Computacionalmente, el sistema esta organizado como un pipeline reproducible:
+
+\begin{itemize}
+    \item un loader de datos y universo;
+    \item un ejecutor walk-forward;
+    \item capas de features y modelos por fold;
+    \item una suite oficial que empaqueta la congelacion institucional;
+    \item manifiestos y notas de proveniencia.
+\end{itemize}
+
+Esa estructura importa porque separa claramente la corrida base, la generacion de artefactos auditables y la capa institucional que declara que variante es baseline y cual no lo es.
+
+\subsection{Fundamento fisico y conceptual}
+En el proyecto aparecen terminos como \enquote{fragilidad}, \enquote{presion}, \enquote{transicion}, \enquote{recuperacion} y referencias a Hawkes. Conviene distinguir con precision:
+
+\begin{itemize}
+    \item si hay implementacion real, debe describirse como tal;
+    \item si hay solo analogia, debe quedarse como analogia.
+\end{itemize}
+
+En la version oficial existe una implementacion inspirada en Hawkes: el archivo \code{transition_recovery_model.py} construye intensidades discretas de eventos de estres y recuperacion mediante recurrencias con decaimiento, es decir, una memoria exponencial de eventos pasados. Eso es \emph{Hawkes-style} o \emph{Hawkes-inspired}, pero no equivale a estimar un proceso de Hawkes completo ni a ajustar kernels de autoexcitacion de forma estructural \citep{hawkes1971}. Del mismo modo, no hay evidencia de uso operativo de ecuaciones tipo Navier--Stokes ni de una formulacion fisica continua del mercado. La fisica sobrevive aqui como vocabulario conceptual de flujo, estabilidad, propagacion y cambio de estado.
+
+\section{Datos, universo y preparacion de informacion}
+La carga de datos oficial ocurre en \code{mahoraga14_data.py}. Ese archivo:
+
+\begin{itemize}
+    \item descarga OHLCV ajustado mediante \code{yfinance};
+    \item agrega \code{QQQ}, \code{SPY} y \code{\^VIX} como benchmarks/contexto;
+    \item intenta construir un calendario de universo canonico si \code{use_canonical_universe=True};
+    \item carga factores FF5\(+\)UMD en cache cuando estan disponibles.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Entradas de datos y su uso efectivo}
+\label{tab:data-inputs}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.18\textwidth} >{\raggedright\arraybackslash}p{0.18\textwidth} X}
+\toprule
+\textbf{Entrada} & \textbf{Fuente en codigo} & \textbf{Uso efectivo en el baseline} \\
+\midrule
+OHLCV de acciones & \code{download_ohlcv} & Base para senales de seleccion, stops, turnover, HRP y features de trayectoria. \\
+\code{QQQ} & Benchmark principal & Referencia para momentum relativo, alpha, beta, captura alcista/bajista y contexto de mercado. \\
+\code{SPY} & Benchmark secundario & Referencia adicional para alpha y beta. \\
+\code{\^VIX} & Contexto de estres & Entra en features de mercado, crisis/turbulencia y clasificadores estructurales. \\
+FF5\(+\)UMD & Cache opcional & Se cargan como capacidad heredada de analisis, pero no son el corazon decisional del baseline oficial publicado. \\
+Universo canonico PIT & Motor de universo heredado & Si esta activo, reconstituye miembros con reglas de invertibilidad proxy; si no, se cae al universo estatico. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+El universo estatico por defecto contiene doce nombres megacap/tecnologia: \code{AAPL, MSFT, NVDA, GOOGL, AMZN, META, AVGO, ASML, TSM, ADBE, NFLX, AMD}. Cuando el motor canonico esta activo, la reconstitucion es trimestral y usa una proxy llamada \code{LiqSizeProxy = price * volume}; no usa capitalizacion flotante real ni clasificacion GICS puntual, por lo que el propio codigo advierte que no elimina completamente el sesgo de supervivencia.
+
+\section{Limpieza, depuracion y validacion de datos}
+El baseline no trata los datos como un detalle menor. Hereda de \code{mahoraga6_1.py} varias defensas practicas:
+
+\begin{itemize}
+    \item cache local de OHLCV;
+    \item reindexacion a un calendario comun;
+    \item \emph{forward fill} limitado para precios y volumen;
+    \item exclusiones por seasoning y liquidez en el universo canonico;
+    \item interseccion entre universo disponible y tickers realmente descargados.
+\end{itemize}
+
+El motor canonico exige, como minimo, seasoning de 63 dias y un ADDV proxy de 50 millones de USD. El supuesto de free float es aproximado mediante continuidad de volumen, no mediante datos reales de acciones flotantes. Esto es util para simulacion, pero no debe venderse como una replica institucional de un proveedor de datos tipo CRSP/Compustat.
+
+La validacion temporal tambien es parte de la limpieza metodologica. Los folds estan definidos explicitamente y no por inferencia heuristica:
+
+\begin{itemize}
+    \item fold 1: test 2017-01-03 a 2018-12-31;
+    \item fold 2: test 2019-01-02 a 2020-12-31;
+    \item fold 3: test 2021-01-04 a 2022-12-30;
+    \item fold 4: test 2023-01-03 a 2024-06-28;
+    \item fold 5: test 2024-07-01 a 2026-02-20.
+\end{itemize}
+
+Entre \code{train_end} y \code{val_start} se exige embargo de 252 dias habiles. El codigo deja ademas una advertencia metodologica importante: en un expanding walk-forward, ventanas de validacion posteriores pueden reutilizar historia ya observada en pruebas anteriores; por ello el \emph{stitched OOS} debe interpretarse como trayectoria revalidada secuencialmente, no como un unico holdout intocado desde el primer fold.
+
+\section{Arquitectura global del sistema}
+La documentacion oficial resume la arquitectura con la cadena \basealpha{} \(+\) \allocator{} \(+\) \conviction{} \(+\) \leaderlayer{} \(+\) \backoff{} \(+\) continuation como filtro de calidad \citep{quantBaselineDocs2026}. Esa frase es correcta, pero demasiado compacta. La arquitectura completa puede leerse mejor como el flujo de la \cref{alg:pipeline} y la \cref{tab:official-modules}.
+
+\begin{algorithm}[H]
+\caption{Pipeline operativo por fold en el baseline oficial}
+\label{alg:pipeline}
+\begin{algorithmic}[1]
+\State Cargar OHLCV, benchmarks y calendario de universo
+\State Construir folds walk-forward y precomputos globales
+\For{cada fold}
+    \State Ajustar el motor \basealpha{} sobre la ventana de entrenamiento
+    \State Precomputar el camino base y el camino defensivo del libro 1x
+    \State Construir contexto diario de mercado y del libro base
+    \State Agregar a frecuencia semanal
+    \State Construir intensidades Hawkes-style de estres y recuperacion
+    \State Ajustar clasificador estructural y filtro \code{continuation_v2}
+    \State Generar reglas de override semanal
+    \State Ajustar y aplicar \allocator{}
+    \State Aplicar \conviction{}, luego \backoff{}, luego \leaderlayer{}
+    \State Reconvertir a trayectoria diaria y ejecutar el backtest del fold
+\EndFor
+\State Coser resultados OOS y ejecutar la suite oficial de auditoria/promotion freeze
+\end{algorithmic}
+\end{algorithm}
+
+\begin{table}[H]
+\centering
+\caption{Modulos efectivos de la ruta oficial}
+\label{tab:official-modules}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.22\textwidth} >{\raggedright\arraybackslash}p{0.15\textwidth} X}
+\toprule
+\textbf{Modulo} & \textbf{Frecuencia dominante} & \textbf{Funcion} \\
+\midrule
+\basealpha & Diaria / rebalanceo semanal & Produce scores de seleccion, top-3 y pesos 1x antes de overlays. \\
+\code{path_structure_features} & Diaria y semanal & Resume el camino del libro base y del mercado en variables de drawdown, eficiencia, amplitud, correlacion y stops. \\
+\code{structural_defense_model} & Semanal & Estima probabilidad de deterioro estructural. \\
+\code{transition_recovery_model} & Semanal & Aporta intensidades Hawkes-style de estres/recuperacion como features; sus clasificadores standalone no forman parte de la ruta oficial. \\
+\code{continuation_v2_model} & Semanal & Calcula trigger, pressure y break-risk; actua como filtro de calidad. \\
+\code{override_policy} & Semanal a diaria & Convierte senales estructurales y de continuation en lifts o defensas temporales. \\
+\allocator & Semanal & Traduce contexto a presupuesto long, gate scale, multiplicador de volatilidad, cap de exposicion y blend hacia lideres. \\
+\conviction & Semanal & Amplifica la traduccion anterior solo cuando el entorno es saludable. \\
+\backoff & Semanal & Recorta presupuesto, blend y multiplicadores cuando suben fragilidad, break-risk o debilidad de benchmark. \\
+\leaderlayer & Diaria & Mezcla libro base y libro de participacion, reinyecta caja y refuerza lideres. \\
+\code{backtest_executor} & Fold completo & Orquesta toda la ruta walk-forward. \\
+\code{official_baseline_suite} & Publicacion oficial & Convierte la familia local congelada en los outputs etiquetados como \officiallabel. \\
+\bottomrule
+\end{tabularx}
+\end{table}
