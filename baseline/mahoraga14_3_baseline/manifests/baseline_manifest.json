@@ -1,0 +1,15 @@
+{
+  "baseline_name": "mahoraga14_3_baseline",
+  "official_variant_label": "MAHORAGA14_3_BASELINE_OFFICIAL",
+  "official_candidate_id": "B1.05_C1.10_L1.10_R1.05",
+  "official_reference_version": "Mahoraga14_3R / ROBUST_MAIN / B1.05_C1.10_L1.10_R1.05",
+  "replaced_baseline": "Mahoraga14_1_LONG_ONLY_CONTROL",
+  "official_knobs": {
+    "budget_multiplier": 1.05,
+    "conviction_multiplier": 1.1,
+    "leader_multiplier": 1.1,
+    "backoff_strength": 1.05
+  },
+  "outputs_root": "D:\\QuantMahoraga\\baseline\\mahoraga14_3_baseline\\outputs",
+  "audit_root": "D:\\QuantMahoraga\\baseline\\mahoraga14_3_baseline\\audit"
+}
