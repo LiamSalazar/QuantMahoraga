@@ -1,5 +1,5 @@
 # Research Policy
 
-- Las ramas de research pueden quedar incompletas si la historia útil no conserva todos sus outputs.
-- En esa situación se documenta qué existe, qué falta y que no hubo rerun.
-- Research no debe volverse dependencia runtime del baseline oficial.
+- Research branches may remain incomplete when the useful historical record does not preserve all outputs.
+- In that situation, the archive documents what exists, what is missing, and that no rerun was performed.
+- Research must not become a runtime dependency of the official baseline.

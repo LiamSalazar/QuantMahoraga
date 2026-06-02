@@ -26,7 +26,7 @@ QuantMahoraga/
     governance/
 ```
 
-Principio rector:
-- `baseline/` es oficial.
-- `research/` es experimental o histórico.
-- `shared/` no debe depender de research.
+Guiding principle:
+- `baseline/` is official.
+- `research/` is experimental or historical.
+- `shared/` must not depend on research.

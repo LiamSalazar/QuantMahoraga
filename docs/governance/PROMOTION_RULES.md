@@ -1,10 +1,10 @@
 # Promotion Rules
 
-Una rama solo puede promocionarse si:
+A branch can be promoted only if it:
 
-- supera materialmente al control oficial
-- no empeora materialmente el riesgo
-- pasa priority windows
-- muestra estabilidad local razonable
-- resiste leave-one-window-out y bootstrap
-- tiene trazabilidad documental completa
+- materially outperforms the official control
+- does not materially worsen risk
+- passes priority windows
+- shows reasonable local stability
+- survives leave-one-window-out and bootstrap checks
+- has complete documentary traceability

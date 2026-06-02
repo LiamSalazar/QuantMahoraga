@@ -36,7 +36,7 @@ ExcludedWindow     SelectedCandidateId  SelectedBudgetMultiplier  SelectedConvic
 ## Continuation acceptance
 ```
  Segment  Fold                         Variant  Activations  ActivationRate  LiftRate  HitRate1W  HitRate4W  NoActHitRate4W  MeanRet1W  MeanRet4W  MeanExcessVsQQQ4W  MeanExcessVsSPY4W  MeanPostDD4W  EdgeVsNoActivation4W  MeanTriggerScore  MeanPressureScore  MeanBreakRisk  MeanBenchmarkScore  PressureEntry  BreakRiskCap  ContinuationUseful                                  FinalRoleDecision      Interpretation
-STITCHED     0 MAHORAGA14_3_LONG_PARTICIPATION           10        0.036777  0.101674   0.416667   0.583333        0.556331   0.006966   0.060594           0.030206           0.039959     -0.009885              0.045779          0.483764           0.537915       0.381355            0.640396       0.408534      0.586243                   1 A. continuation se mantiene como filtro de calidad positive_local_edge
+STITCHED     0 MAHORAGA14_3_LONG_PARTICIPATION           10        0.036777  0.101674   0.416667   0.583333        0.556331   0.006966   0.060594           0.030206           0.039959     -0.009885              0.045779          0.483764           0.537915       0.381355            0.640396       0.408534      0.586243                   1 A. continuation remains a quality filter positive_local_edge
 ```
 
 ## Acceptance robustness

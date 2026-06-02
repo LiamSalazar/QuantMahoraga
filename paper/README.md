@@ -1,26 +1,26 @@
-# Paper de Mahoraga
+# Mahoraga Paper
 
-Contenido de esta carpeta:
+Contents of this folder:
 
-- `mahoraga_baseline_paper.tex`: fuente principal del paper en LaTeX.
-- `references.bib`: bibliografia BibTeX.
-- `figures/`: figuras copiadas desde los outputs oficiales auditados del baseline.
+- `mahoraga_baseline_paper.tex`: main LaTeX paper source.
+- `references.bib`: BibTeX bibliography.
+- `figures/`: figures copied from the audited official baseline outputs.
 
-Fuente factual usada:
+Factual sources used:
 
-- Baseline oficial congelado: `D:/QuantMahoraga/baseline/mahoraga14_3_baseline`
-- Documentacion oficial: `D:/QuantMahoraga/baseline/mahoraga14_3_baseline/docs`
-- Outputs oficiales: `D:/QuantMahoraga/baseline/mahoraga14_3_baseline/outputs`
-- Auditorias oficiales: `D:/QuantMahoraga/baseline/mahoraga14_3_baseline/audit`
+- Frozen official baseline: `D:/QuantMahoraga/baseline/mahoraga14_3_baseline`
+- Official documentation: `D:/QuantMahoraga/baseline/mahoraga14_3_baseline/docs`
+- Official outputs: `D:/QuantMahoraga/baseline/mahoraga14_3_baseline/outputs`
+- Official audits: `D:/QuantMahoraga/baseline/mahoraga14_3_baseline/audit`
 
-Compilacion recomendada:
+Recommended compilation:
 
 ```powershell
 cd D:\QuantMahoraga\paper
 latexmk -pdf mahoraga_baseline_paper.tex
 ```
 
-Alternativa con `pdflatex` + `bibtex`:
+Alternative with `pdflatex` + `bibtex`:
 
 ```powershell
 cd D:\QuantMahoraga\paper
@@ -30,7 +30,7 @@ pdflatex mahoraga_baseline_paper.tex
 pdflatex mahoraga_baseline_paper.tex
 ```
 
-Nota sobre este entorno:
+Note about this environment:
 
-- En la revision realizada el `2026-05-04` no estaban disponibles `pdflatex`, `xelatex` ni `latexmk`, por lo que no se pudo compilar el PDF aqui.
-- El contenido se dejo listo para compilar en cuanto exista una distribucion TeX funcional en el sistema.
+- In the review performed on `2026-05-04`, `pdflatex`, `xelatex`, and `latexmk` were not available, so the PDF could not be compiled locally.
+- The content is prepared for compilation once a working TeX distribution is available on the system.

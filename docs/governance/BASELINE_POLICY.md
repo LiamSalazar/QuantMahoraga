@@ -1,6 +1,6 @@
 # Baseline Policy
 
-- Solo existe una baseline oficial activa por línea principal.
-- La baseline oficial debe vivir en `baseline/`.
-- Todo cambio nuevo empieza en `research/`.
-- El baseline oficial no se usa para discovery libre ni tuning abierto.
+- Only one active official baseline exists per main line.
+- The official baseline must live under `baseline/`.
+- Every new change starts under `research/`.
+- The official baseline is not used for unrestricted discovery or open tuning.

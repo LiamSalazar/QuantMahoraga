@@ -1,35 +1,35 @@
 # Mahoraga14_3 Baseline
 
-Baseline long-only oficial, congelado y autocontenido.
+Frozen, self-contained official long-only baseline.
 
-## Freeze oficial
+## Official Freeze
 
-- baseline oficial: `MAHORAGA14_3_BASELINE_OFFICIAL`
-- referencia congelada: `Mahoraga14_3R / ROBUST_MAIN / B1.05_C1.10_L1.10_R1.05`
-- baseline reemplazado: `Mahoraga14_1_LONG_ONLY_CONTROL`
+- official baseline: `MAHORAGA14_3_BASELINE_OFFICIAL`
+- frozen reference: `Mahoraga14_3R / ROBUST_MAIN / B1.05_C1.10_L1.10_R1.05`
+- replaced baseline: `Mahoraga14_1_LONG_ONLY_CONTROL`
 
-## Estructura local
+## Local Structure
 
-- `src/`: código autocontenido del baseline.
-- `config/`: freeze de parámetros.
-- `outputs/`: performance, sensibilidad y figuras oficiales.
-- `audit/`: aceptación, robustez, continuidad y diagnósticos.
-- `paper_pack/`: tablas, figuras y claims listos para paper.
-- `docs/`: freeze, decision flow, model card y robustez.
-- `manifests/`: manifests y provenance.
-- `scripts/`: runners reproducibles desde la raíz del repo.
-- `tests/`: pruebas mínimas de imports, pathing y freeze.
+- `src/`: self-contained baseline source code.
+- `config/`: parameter freeze files.
+- `outputs/`: official performance, sensitivity, and figure outputs.
+- `audit/`: acceptance, robustness, continuation, and diagnostic artifacts.
+- `paper_pack/`: paper-ready tables, figures, and supported claims.
+- `docs/`: freeze notes, decision flow, model card, and robustness documentation.
+- `manifests/`: manifests and provenance files.
+- `scripts/`: reproducible runners from the repository root.
+- `tests/`: minimal import, pathing, and freeze tests.
 
-## Cómo correr
+## How to Run
 
 ```powershell
 cd D:\QuantMahoraga
 python .\baseline\mahoraga14_3_baseline\scripts\run_official_baseline.py
 ```
 
-## Qué no es esta carpeta
+## What This Folder Is Not
 
-- no es una rama de discovery
-- no es la zona de research
-- no incluye shorts ni sleeves de hedge
-- no redefine la tesis científica; solo congela la promovida
+- It is not a discovery branch.
+- It is not the research workspace.
+- It does not include short sleeves or hedge sleeves.
+- It does not redefine the scientific thesis; it only freezes the promoted baseline.
