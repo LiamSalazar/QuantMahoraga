@@ -1,0 +1,66 @@
+Mahoraga extended analysis API: http://127.0.0.1:8001
+INFO:     127.0.0.1:5768 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:5771 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:5773 - "GET /robustness/plateau HTTP/1.1" 200 OK
+INFO:     127.0.0.1:5772 - "GET /decisions?candidate_id=B1.05_C1.10_L1.10_R1.05&limit=3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:5775 - "GET /positions?candidate_id=B1.05_C1.10_L1.10_R1.05&ticker=NVDA&selected_only=true&limit=3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20986 - "GET /figures/universe_robustness_comparison.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:13272 - "GET /figures/extended_multiplier_heatmap.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3420 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:2714 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3420 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42751 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:11129 - "GET /robustness/multipliers?limit=300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24296 - "GET /figures/multiplier_1d_degradation.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58049 - "GET /robustness/plateau HTTP/1.1" 200 OK
+INFO:     127.0.0.1:11129 - "GET /robustness/multipliers?limit=300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25433 - "GET /robustness/plateau HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25433 - "GET /decisions?candidate_id=B1.05_C1.10_L1.10_R1.05&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:11129 - "GET /decisions?candidate_id=B1.05_C1.10_L1.10_R1.05&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17907 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:10717 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17907 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22487 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18772 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53584 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20168 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18772 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3572 - "GET /figures/extended_multiplier_heatmap.png HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:3572 - "GET /figures/universe_robustness_comparison.png HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:7033 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28314 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:7033 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28314 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:11651 - "GET /figures/extended_multiplier_heatmap.png HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:3972 - "GET /figures/universe_robustness_comparison.png HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:5250 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21563 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:5250 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21563 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20767 - "GET /robustness/multipliers?limit=300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3060 - "GET /robustness/plateau HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28435 - "GET /figures/multiplier_1d_degradation.png HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:20767 - "GET /robustness/multipliers?limit=300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3060 - "GET /robustness/plateau HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18381 - "GET /decisions?candidate_id=B1.05_C1.10_L1.10_R1.05&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:5172 - "GET /decisions?candidate_id=B1.05_C1.10_L1.10_R1.05&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49034 - "GET /positions?candidate_id=B1.05_C1.10_L1.10_R1.05&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49034 - "GET /module-trace?candidate_id=B1.05_C1.10_L1.10_R1.05&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49034 - "GET /market-context?limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:1228 - "GET /market-context?limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:1228 - "GET /robustness/multipliers?limit=300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28848 - "GET /robustness/plateau HTTP/1.1" 200 OK
+INFO:     127.0.0.1:1228 - "GET /robustness/multipliers?limit=300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28848 - "GET /robustness/plateau HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23987 - "GET /robustness/multipliers?limit=300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:1510 - "GET /robustness/plateau HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18811 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18541 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18811 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18541 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:6026 - "GET /figures/extended_multiplier_heatmap.png HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:37902 - "GET /figures/universe_robustness_comparison.png HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:39499 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:8269 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39499 - "GET /summary/baseline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:8269 - "GET /universes/summary?limit=20 HTTP/1.1" 200 OK
