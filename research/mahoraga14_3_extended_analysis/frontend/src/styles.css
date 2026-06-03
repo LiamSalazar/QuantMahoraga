@@ -3,13 +3,14 @@
 @tailwind utilities;
 
 html {
-  background: #ffffff;
-  color: #15181d;
+  background: #070809;
+  color: #e7eaee;
 }
 
 body {
   margin: 0;
   font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", Arial, sans-serif;
+  background: #070809;
 }
 
 button,
@@ -18,6 +19,23 @@ select {
   font: inherit;
 }
 
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
 .table-scroll {
   scrollbar-width: thin;
+  scrollbar-color: #3a424b #0f1215;
+}
+
+::selection {
+  background: rgba(145, 169, 184, 0.28);
+}
+
+img {
+  color: #8c949e;
 }
