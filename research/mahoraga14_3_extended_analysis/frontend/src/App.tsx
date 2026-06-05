@@ -28,6 +28,56 @@ type ApiRows = {
   rows: Row[];
 };
 
+type Metric = {
+  metric_name: string;
+  value: unknown;
+  display_value: string;
+  category: string;
+  source_file?: string | null;
+  source_section?: string | null;
+  interpretation: string;
+  limitation?: string | null;
+};
+
+type ScorecardData = {
+  identity: Row;
+  nomenclature: Row[];
+  categories: Record<string, Metric[]>;
+  metrics: Metric[];
+  unavailable_metrics: Metric[];
+  sources_discovered: Row[];
+  summary: Row;
+};
+
+type ResearchQuestion = {
+  id: string;
+  question: string;
+  data_sources_used: string[];
+  methodology: string[];
+  evidence_values: Row;
+  conclusion: string;
+  confidence_level: string;
+  limitations: string;
+};
+
+type ResearchQuestionResponse = {
+  questions: ResearchQuestion[];
+};
+
+type CandidateMetadata = {
+  official: Row;
+  nomenclature: Row[];
+  families: Row[];
+  representative_candidates: string[];
+  candidates: Row[];
+};
+
+type FoldResponse = {
+  folds: Row[];
+  sources: string[];
+  interpretation: string[];
+};
+
 type OverviewData = {
   official_candidate_id: string;
   official_universe_id: string;
@@ -80,6 +130,8 @@ type DecisionDetail = {
   outcomes: Row[];
   market_context: Row | null;
   interpretation: string[];
+  comparison_chips?: Row[];
+  data_sources?: string[];
 };
 
 type ModuleEffectiveness = {
@@ -91,6 +143,7 @@ type ModuleEffectiveness = {
   module_states: Row[];
   fold_behavior: Row[];
   interpretation: string[];
+  explanations?: Record<string, string[]>;
 };
 
 type TickerContribution = {
@@ -100,11 +153,50 @@ type TickerContribution = {
 };
 
 type CubeData = {
+  problem?: string;
+  evidence_chain?: string[];
+  analytical_axes?: Row[];
+  operations?: Row[];
   files: Row[];
   schemas: Record<string, string[]>;
   logical_dimensions: string[];
   relationships: string[];
   sample_queries: string[];
+};
+
+type DecisionCase = {
+  date: string;
+  fold: number;
+  candidate_id: string;
+  candidate_label: string;
+  universe_id: string;
+  participation_state?: string;
+  long_budget?: number;
+  market_regime?: string;
+  outcome_20d_vs_qqq?: number;
+  beat_qqq_20d?: boolean | number | null;
+  beat_control_20d?: boolean | number | null;
+  key_module_state?: string;
+};
+
+type DecisionPreset = {
+  id: string;
+  title: string;
+  count: number;
+  what_it_means: string;
+  research_question: string;
+  tables_used: string[];
+  expected_interpretation: string;
+  selected_explanation: string;
+};
+
+type DecisionCaseResponse = {
+  presets: DecisionPreset[];
+  active_preset: string;
+  count: number;
+  cases: DecisionCase[];
+  result_text: string;
+  explanation: string;
 };
 
 type ViewKey = "overview" | "robustness" | "decision" | "modules" | "cubes";
@@ -116,6 +208,21 @@ const views: { key: ViewKey; label: string; icon: ReactNode }[] = [
   { key: "modules", label: "Module and Outcome Audit", icon: <Workflow size={15} /> },
   { key: "cubes", label: "Data Cubes", icon: <Database size={15} /> },
 ];
+
+const emptyScorecard: ScorecardData = {
+  identity: {},
+  nomenclature: [],
+  categories: {},
+  metrics: [],
+  unavailable_metrics: [],
+  sources_discovered: [],
+  summary: {},
+};
+
+const emptyQuestions: ResearchQuestionResponse = { questions: [] };
+const emptyCandidates: CandidateMetadata = { official: {}, nomenclature: [], families: [], representative_candidates: [], candidates: [] };
+const emptyFolds: FoldResponse = { folds: [], sources: [], interpretation: [] };
+const emptyDecisionCases: DecisionCaseResponse = { presets: [], active_preset: "official-baseline", count: 0, cases: [], result_text: "Showing 0 cases matching current filters.", explanation: "" };
 
 async function fetchJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`);
@@ -235,6 +342,86 @@ function KpiGrid({ items }: { items: { label: string; value: unknown; keyName?: 
           {item.hint && <div className="mt-1 text-xs text-muted">{item.hint}</div>}
         </div>
       ))}
+    </div>
+  );
+}
+
+function MetricSection({ title, metrics, limit = 12 }: { title: string; metrics: Metric[]; limit?: number }) {
+  const visible = metrics.slice(0, limit);
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-medium uppercase text-muted">{title}</div>
+      <div className="grid grid-cols-1 gap-px overflow-hidden border border-line bg-line md:grid-cols-2 xl:grid-cols-3">
+        {visible.map((metric) => (
+          <div key={`${metric.category}-${metric.metric_name}`} className="min-h-[118px] bg-panel-strong p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 text-xs text-muted">{metric.metric_name}</div>
+              {metric.value === null || metric.value === undefined ? <span className="shrink-0 border border-line px-1.5 py-0.5 text-[10px] uppercase text-muted">N/A</span> : null}
+            </div>
+            <div className="mt-2 break-words text-lg font-semibold text-ink">{metric.display_value}</div>
+            <div className="mt-2 line-clamp-2 text-xs leading-5 text-muted">{metric.interpretation}</div>
+            {metric.source_file && <div className="mt-2 truncate text-[11px] text-muted">{metric.source_file}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceBlock({ question }: { question: ResearchQuestion | undefined }) {
+  if (!question) return <div className="border border-line bg-panel-strong p-4 text-sm text-muted">{NA}</div>;
+  const evidenceRows = Object.entries(question.evidence_values ?? {}).map(([key, value]) => ({ metric: key, value: Array.isArray(value) ? `${value.length} rows` : asText(value) }));
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+      <div className="space-y-3">
+        <div className="border border-line bg-panel-strong p-3">
+          <div className="text-xs font-medium uppercase text-muted">Methodology</div>
+          <BulletList items={question.methodology} />
+        </div>
+        <div className="border border-line bg-panel-strong p-3">
+          <div className="text-xs font-medium uppercase text-muted">Conclusion</div>
+          <div className="mt-2 text-sm leading-6 text-ink">{question.conclusion}</div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <span className="border border-accent/50 bg-accent/10 px-2 py-1 text-ink">{question.confidence_level}</span>
+            <span className="border border-line bg-panel px-2 py-1 text-muted">{question.limitations}</span>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-3">
+        <DataTable rows={evidenceRows} limit={12} columns={["metric", "value"]} />
+        <div className="border border-line bg-panel-strong p-3">
+          <div className="text-xs font-medium uppercase text-muted">Data Sources</div>
+          <div className="mt-2 space-y-1">
+            {question.data_sources_used.map((source) => (
+              <div key={source} className="break-all text-xs leading-5 text-muted">
+                {source}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Badge({ children }: { children: ReactNode }) {
+  return <span className="inline-flex items-center border border-accent bg-accent/10 px-2 py-1 text-xs font-semibold uppercase text-ink">{children}</span>;
+}
+
+function ComparisonChips({ chips }: { chips?: Row[] }) {
+  if (!chips?.length) return null;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {chips.map((chip) => {
+        const status = String(chip.status ?? "unknown");
+        const active = status === "positive" || status === "active";
+        const negative = status === "negative";
+        return (
+          <span key={String(chip.label)} className={`border px-2 py-1 text-xs ${active ? "border-accent bg-accent/10 text-ink" : negative ? "border-risk bg-risk/10 text-risk" : "border-line bg-panel-strong text-muted"}`}>
+            {asText(chip.label)} {chip.value === null || chip.value === undefined ? "" : asText(chip.value)}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -515,69 +702,104 @@ function SelectField({
 }
 
 function Overview() {
-  const [overview, error] = useData<OverviewData>("/dss/overview", {
-    official_candidate_id: OFFICIAL_CANDIDATE_ID,
-    official_universe_id: OFFICIAL_UNIVERSE_ID,
-    official_metrics: null,
-    robustness_summary: {},
-    main_sensitivity: null,
-    universe_summary: [],
-    best_universe: null,
-    artifacts: [],
-    narrative: [],
-  });
+  const [scorecard, scoreError] = useData<ScorecardData>("/dss/scorecard", emptyScorecard);
+  const [questions, questionError] = useData<ResearchQuestionResponse>("/dss/research-questions", emptyQuestions);
+  const [folds, foldError] = useData<FoldResponse>("/dss/folds", emptyFolds);
+  const [activeQuestion, setActiveQuestion] = useState("baseline-support");
 
-  const official = overview.official_metrics ?? {};
-  const robust = overview.robustness_summary ?? {};
-  const kpis = [
-    { label: "Official candidate", value: overview.official_candidate_id },
-    { label: "CAGR", value: official.CAGR, keyName: "CAGR" },
-    { label: "Sharpe", value: official.Sharpe },
-    { label: "Sortino", value: official.Sortino },
-    { label: "MaxDD", value: official.MaxDD, keyName: "MaxDD" },
-    { label: "AlphaNW_QQQ", value: official.AlphaNW_QQQ },
-    { label: "AlphaNW_SPY", value: official.AlphaNW_SPY },
-    { label: "Robust region", value: robust.robust_region_share_extended, keyName: "robust_region_share_extended" },
-    { label: "Distance to decay", value: robust.distance_to_decay },
-    { label: "Sensitive axis", value: robust.most_sensitive_axis },
-    { label: "Best universe", value: overview.best_universe?.universe_id },
-    { label: "Sampled candidates", value: robust.sampled_candidates },
-  ];
+  const identity = scorecard.identity ?? {};
+  const active = questions.questions.find((item) => item.id === activeQuestion) ?? questions.questions[0];
+  const questionCards = questions.questions.slice(0, 9).map((item) => ({
+    id: item.id,
+    label: item.question,
+    note: item.confidence_level,
+  }));
+  const foldRows = folds.folds.map((fold) => ({
+    Fold: fold.Fold,
+    TestStart: fold.TestStart,
+    TestEnd: fold.TestEnd,
+    CAGR: fold.CAGR,
+    Sharpe: fold.Sharpe,
+    Sortino: fold.Sortino,
+    MaxDD: fold.MaxDD,
+    AlphaNW_QQQ: fold.AlphaNW_QQQ,
+    Exposure: fold.Exposure,
+    weak_spots: Array.isArray(fold.weak_spots) ? fold.weak_spots.join("; ") : fold.weak_spots,
+  }));
 
   return (
     <div className="space-y-4">
-      <ErrorBanner message={error} />
-      <Panel title="Executive Research State" icon={<ShieldCheck size={16} />}>
-        <KpiGrid items={kpis} />
+      <ErrorBanner message={scoreError || questionError || foldError} />
+      <Panel title="Official Baseline Identity" icon={<ShieldCheck size={16} />}>
+        <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+          <div className="border border-line bg-panel-strong p-4">
+            <Badge>{asText(identity.badge)}</Badge>
+            <div className="mt-4 text-2xl font-semibold text-ink">{asText(identity.short_label)}</div>
+            <div className="mt-2 break-all text-sm text-muted">{asText(identity.technical_id)}</div>
+            <div className="mt-4 grid gap-2 text-sm">
+              <div className="flex justify-between gap-3 border-b border-line pb-2"><span className="text-muted">Role</span><span className="text-right text-ink">{asText(identity.candidate_role)}</span></div>
+              <div className="flex justify-between gap-3 border-b border-line pb-2"><span className="text-muted">Universe</span><span className="text-right text-ink">{asText(identity.universe)}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-muted">Source</span><span className="text-right text-ink">{asText(identity.source)}</span></div>
+            </div>
+          </div>
+          <div className="grid gap-px overflow-hidden border border-line bg-line md:grid-cols-2">
+            {scorecard.nomenclature.map((item) => (
+              <div key={String(item.code)} className="bg-panel-strong p-4">
+                <div className="text-lg font-semibold text-ink">{asText(item.code)} = {asText(item.parameter)}</div>
+                <div className="mt-1 text-xs text-muted">Official value {asText(item.official_value)}</div>
+                <div className="mt-3 text-sm leading-6 text-ink">{asText(item.meaning)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </Panel>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <Panel title="Deterministic Reading" icon={<Target size={16} />}>
-          <BulletList items={overview.narrative} />
+      <div className="grid gap-4">
+        <Panel title="Performance Scorecard" icon={<BarChart3 size={16} />}>
+          <MetricSection title="Performance" metrics={scorecard.categories.Performance ?? []} />
         </Panel>
-        <Panel title="Main Sensitivity" icon={<Activity size={16} />}>
-          <FieldGrid
-            row={overview.main_sensitivity}
-            fields={[
-              { label: "Axis", key: "axis" },
-              { label: "Sensitivity score", key: "sensitivity_score" },
-              { label: "Worst candidate", key: "worst_candidate_id" },
-              { label: "Worst Sharpe drop", key: "worst_sharpe_drop" },
-              { label: "Worst CAGR drop", key: "worst_cagr_drop" },
-              { label: "Worst fold damage", key: "worst_severe_fold_damage_count" },
-            ]}
-          />
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Panel title="Risk Scorecard" icon={<Activity size={16} />}>
+            <MetricSection title="Risk" metrics={scorecard.categories.Risk ?? []} />
+          </Panel>
+          <Panel title="Statistical Evidence Scorecard" icon={<LineChart size={16} />}>
+            <MetricSection title="Benchmark and Statistical Evidence" metrics={scorecard.categories["Benchmark and Statistical Evidence"] ?? []} />
+          </Panel>
+        </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Panel title="Portfolio / Execution Scorecard" icon={<Workflow size={16} />}>
+            <MetricSection title="Portfolio and Execution Diagnostics" metrics={scorecard.categories["Portfolio and Execution Diagnostics"] ?? []} />
+          </Panel>
+          <Panel title="ML / Signal Diagnostics Scorecard" icon={<Target size={16} />}>
+            <MetricSection title="ML / Signal Diagnostics" metrics={scorecard.categories["ML / Signal Diagnostics"] ?? []} />
+            <div className="mt-4 border border-line bg-panel-strong p-3 text-sm leading-6 text-ink">
+              In financial systems, raw classification accuracy alone can be misleading. A signal with near-50% accuracy may still add value if payoff asymmetry, exposure timing, drawdown control, or position sizing improves portfolio-level outcomes. These diagnostics should be interpreted together with alpha, drawdown, exposure, turnover, robustness and fold behavior.
+            </div>
+          </Panel>
+        </div>
+        <Panel title="Robustness Scorecard" icon={<ShieldCheck size={16} />}>
+          <MetricSection title="Robustness" metrics={scorecard.categories.Robustness ?? []} />
         </Panel>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
-        <Panel title="Universe Robustness Summary" icon={<GitBranch size={16} />}>
-          <DataTable rows={overview.universe_summary} limit={8} columns={["universe_id", "run_status", "usable_count", "CAGR", "Sharpe", "Sortino", "MaxDD", "AlphaNW_QQQ"]} />
+      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+        <Panel title="Research Questions" icon={<Target size={16} />}>
+          <QuestionCards questions={questionCards} active={active?.id ?? ""} onSelect={setActiveQuestion} />
+          <div className="mt-4">
+            <EvidenceBlock question={active} />
+          </div>
         </Panel>
-        <Panel title="Audit Artifacts" icon={<FileText size={16} />}>
-          <DataTable rows={overview.artifacts} limit={10} columns={["file", "rows", "available"]} />
+        <Panel title="Fold Summary" icon={<GitBranch size={16} />}>
+          <BulletList items={folds.interpretation} />
+          <div className="mt-3">
+            <DataTable rows={foldRows} limit={8} columns={["Fold", "TestStart", "TestEnd", "CAGR", "Sharpe", "MaxDD", "AlphaNW_QQQ", "Exposure", "weak_spots"]} />
+          </div>
         </Panel>
       </div>
+
+      <Panel title="Data Source Inventory" icon={<FileText size={16} />}>
+        <DataTable rows={scorecard.sources_discovered} limit={12} columns={["group", "path", "available", "files"]} />
+      </Panel>
     </div>
   );
 }
@@ -596,48 +818,25 @@ function RobustnessDss() {
   });
   const [budget, budgetError] = useData<BudgetData>("/dss/robustness/budget", { rows: [], interpretation: [] });
   const [plateau, plateauError] = useData<PlateauData>("/dss/robustness/plateau", { plateau: [], sensitivity: [], worst_fold_degradation: [], interpretation: [] });
+  const [questions, questionError] = useData<ResearchQuestionResponse>("/dss/research-questions", emptyQuestions);
+  const [candidates, candidateError] = useData<CandidateMetadata>("/dss/candidates", emptyCandidates);
   const [question, setQuestion] = useState("spike");
 
-  const questionText: Record<string, string[]> = {
-    spike: [
-      `Robust region share is ${formatMetric(overview.robustness_summary.robust_region_share_extended, "robust_region_share_extended")}.`,
-      "The sampled evidence does not describe the official candidate as a single narrow spike.",
-      "The caution is local: sensitivity appears first around budget underdeployment.",
-    ],
-    budgetDown: budget.interpretation,
-    budgetUp: [
-      "Moderate upward budget samples did not collapse performance in the sampled one-dimensional range.",
-      "This does not establish global optimality outside the sampled perturbations.",
-    ],
-    sensitive: [
-      `The most sensitive axis is ${asText(overview.robustness_summary.most_sensitive_axis)}.`,
-      "Sensitivity ranking is taken from the extended multiplier robustness CSV.",
-    ],
-    plateau: plateau.interpretation,
-    fold: ["Worst-fold degradation isolates local walk-forward damage that can be hidden by stitched aggregate results."],
-    symmetry: ["The plateau table shows asymmetric sampled robustness: budget is narrower on the lower side than conviction, leader, or backoff."],
-  };
-
-  const questions = [
-    { id: "spike", label: "Is the official candidate a narrow parameter spike?" },
-    { id: "budgetDown", label: "What happens when budget is reduced?" },
-    { id: "budgetUp", label: "What happens when budget is increased?" },
-    { id: "sensitive", label: "Which multiplier is most sensitive?" },
-    { id: "plateau", label: "Which parameters have the widest robust region?" },
-    { id: "fold", label: "Which candidates caused fold-level damage?" },
-    { id: "symmetry", label: "Does robustness look symmetric or asymmetric?" },
-  ];
+  const robustnessQuestionIds = ["spike", "budget-localized", "budget-reduced", "budget-increased", "most-sensitive", "widest-region", "fold-damage", "generalization", "limitations"];
+  const robustnessQuestions = questions.questions.filter((item) => robustnessQuestionIds.includes(item.id));
+  const activeQuestion = robustnessQuestions.find((item) => item.id === question) ?? robustnessQuestions[0];
+  const questionCards = robustnessQuestions.map((item) => ({ id: item.id, label: item.question, note: item.confidence_level }));
 
   const official = overview.official_metrics ?? {};
   const robust = overview.robustness_summary ?? {};
 
   return (
     <div className="space-y-4">
-      <ErrorBanner message={budgetError || plateauError} />
+      <ErrorBanner message={budgetError || plateauError || questionError || candidateError} />
       <Panel title="Robustness Questions" icon={<Target size={16} />}>
-        <QuestionCards questions={questions} active={question} onSelect={setQuestion} />
-        <div className="mt-4 border border-line bg-panel-strong p-3">
-          <BulletList items={questionText[question] ?? []} />
+        <QuestionCards questions={questionCards} active={activeQuestion?.id ?? ""} onSelect={setQuestion} />
+        <div className="mt-4">
+          <EvidenceBlock question={activeQuestion} />
         </div>
       </Panel>
 
@@ -676,11 +875,18 @@ function RobustnessDss() {
         <DataTable rows={plateau.worst_fold_degradation} limit={12} columns={["CandidateId", "sweep_role", "CAGR", "Sharpe", "MaxDD", "severe_fold_damage_count", "worst_fold_cagr_delta_vs_official"]} />
       </Panel>
 
-      <Panel title="Robustness Figures" icon={<LineChart size={16} />}>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <img className="w-full border border-line bg-panel-strong" src={`${API_BASE}/figures/extended_multiplier_heatmap.png`} alt="Extended multiplier heatmap" />
-          <img className="w-full border border-line bg-panel-strong" src={`${API_BASE}/figures/multiplier_1d_degradation.png`} alt="One-dimensional degradation" />
-        </div>
+      <Panel title="Candidate Explanation" icon={<ShieldCheck size={16} />}>
+        <DataTable rows={candidates.candidates} limit={14} columns={["label", "technical_id", "role", "changed_axes", "robust_flag", "representative_cube_candidate", "interpretation"]} />
+      </Panel>
+
+      <Panel title="Static figures from reports" icon={<LineChart size={16} />}>
+        <details>
+          <summary className="cursor-pointer text-sm text-ink">Open static figure references</summary>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <img className="w-full border border-line bg-panel-strong" src={`${API_BASE}/figures/extended_multiplier_heatmap.png`} alt="Extended multiplier heatmap" />
+            <img className="w-full border border-line bg-panel-strong" src={`${API_BASE}/figures/multiplier_1d_degradation.png`} alt="One-dimensional degradation" />
+          </div>
+        </details>
       </Panel>
     </div>
   );
@@ -688,22 +894,34 @@ function RobustnessDss() {
 
 function DecisionInvestigation() {
   const [options] = useData<MetadataOptions>("/metadata/options", { candidates: [], universes: [], folds: [], tickers: [], modules: [], horizons: [] });
-  const [presets, presetError] = useData<PresetResponse>("/dss/presets", { presets: [] });
   const [activePreset, setActivePreset] = useState("official-baseline");
-  const [selectedCase, setSelectedCase] = useState<Row | null>(null);
+  const [selectedCase, setSelectedCase] = useState<DecisionCase | null>(null);
   const [detail, setDetail] = useState<DecisionDetail>({ decision: null, positions: [], modules: [], outcomes: [], market_context: null, interpretation: [] });
   const [error, setError] = useState("");
-  const [manual, setManual] = useState({
-    date: "",
+  const [filters, setFilters] = useState({
+    date_start: "",
+    date_end: "",
     fold: "",
     candidate_id: OFFICIAL_CANDIDATE_ID,
     universe_id: OFFICIAL_UNIVERSE_ID,
+  });
+  const [appliedFilters, setAppliedFilters] = useState(filters);
+  const [detailFilters, setDetailFilters] = useState({
     ticker: "",
     module_name: "",
     horizon: "",
   });
 
-  const active = presets.presets.find((preset) => preset.id === activePreset) ?? presets.presets[0];
+  const casePath = useMemo(() => {
+    const query = new URLSearchParams({ preset_id: activePreset, limit: "120" });
+    Object.entries(appliedFilters).forEach(([key, value]) => {
+      if (value !== "") query.set(key, value);
+    });
+    return `/dss/decision-cases?${query.toString()}`;
+  }, [activePreset, appliedFilters]);
+
+  const [caseData, caseError, reloadCases] = useData<DecisionCaseResponse>(casePath, emptyDecisionCases);
+  const active = caseData.presets.find((preset) => preset.id === activePreset) ?? caseData.presets[0];
 
   const loadDetail = (params: Row) => {
     fetchJson<DecisionDetail>(buildDetailPath(params))
@@ -715,43 +933,91 @@ function DecisionInvestigation() {
   };
 
   useEffect(() => {
-    if (!presets.presets.length) return;
-    const current = presets.presets.find((preset) => preset.id === activePreset) ?? presets.presets[0];
-    const first = current.sample_decisions[0];
+    const first = caseData.cases[0];
     if (first) {
       setSelectedCase(first);
-      loadDetail(first);
+      loadDetail({
+        date: first.date,
+        fold: first.fold,
+        candidate_id: first.candidate_id,
+        universe_id: first.universe_id,
+      });
     }
-  }, [presets.presets.length, activePreset]);
+  }, [casePath, caseData.cases.length]);
 
   useEffect(() => {
     if (detail.decision) return;
     loadDetail({ candidate_id: OFFICIAL_CANDIDATE_ID, universe_id: OFFICIAL_UNIVERSE_ID });
   }, []);
 
-  const filteredPositions = detail.positions.filter((row) => !manual.ticker || row.ticker === manual.ticker);
-  const filteredModules = detail.modules.filter((row) => !manual.module_name || row.module_name === manual.module_name);
-  const filteredOutcomes = detail.outcomes.filter((row) => !manual.horizon || String(row.horizon) === manual.horizon);
-
-  const presetCards = presets.presets.map((preset) => ({
-    id: preset.id,
-    label: preset.label,
-    count: preset.count,
-    note: preset.description,
-  }));
+  const filteredPositions = detail.positions.filter((row) => !detailFilters.ticker || row.ticker === detailFilters.ticker);
+  const filteredModules = detail.modules.filter((row) => !detailFilters.module_name || row.module_name === detailFilters.module_name);
+  const filteredOutcomes = detail.outcomes.filter((row) => !detailFilters.horizon || String(row.horizon) === detailFilters.horizon);
 
   return (
     <div className="space-y-4">
-      <ErrorBanner message={presetError || error} />
+      <ErrorBanner message={caseError || error} />
       <Panel title="Guided Presets" icon={<Target size={16} />}>
-        <QuestionCards questions={presetCards} active={activePreset} onSelect={setActivePreset} />
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {caseData.presets.map((preset) => (
+            <button
+              key={preset.id}
+              onClick={() => setActivePreset(preset.id)}
+              className={`min-h-[164px] border p-3 text-left transition-colors ${activePreset === preset.id ? "border-accent bg-accent/10" : "border-line bg-panel-strong hover:border-muted"}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-sm font-semibold text-ink">{preset.title}</div>
+                <span className="text-xs text-muted">{preset.count}</span>
+              </div>
+              <div className="mt-2 text-xs leading-5 text-muted">{preset.what_it_means}</div>
+              <div className="mt-2 text-xs leading-5 text-ink">{preset.research_question}</div>
+              <div className="mt-2 truncate text-[11px] text-muted">{preset.tables_used.join(", ")}</div>
+            </button>
+          ))}
+        </div>
+        {active && <div className="mt-4 border border-line bg-panel-strong p-3 text-sm leading-6 text-ink">{caseData.explanation || active.selected_explanation}</div>}
       </Panel>
 
-      <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
-        <Panel title="Preset Cases" icon={<Search size={16} />}>
-          <div className="mb-3 text-sm font-medium text-ink">{active?.label ?? NA}</div>
-          <div className="max-h-[360px] overflow-auto border border-line">
-            {(active?.sample_decisions ?? []).map((item, index) => {
+      <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
+        <Panel
+          title="Filters"
+          icon={<Filter size={16} />}
+          actions={
+            <button
+              onClick={() => {
+                setAppliedFilters(filters);
+                reloadCases();
+              }}
+              className="flex h-9 items-center gap-2 border border-accent px-3 text-sm text-ink"
+            >
+              <Search size={14} />
+              Update cases
+            </button>
+          }
+        >
+          <div className="grid gap-3">
+            <label className="text-xs text-muted">
+              Start date
+              <input value={filters.date_start} onChange={(event) => setFilters({ ...filters, date_start: event.target.value })} className="mt-1 h-9 w-full border border-line bg-panel-strong px-2 text-sm text-ink outline-none focus:border-accent" />
+            </label>
+            <label className="text-xs text-muted">
+              End date
+              <input value={filters.date_end} onChange={(event) => setFilters({ ...filters, date_end: event.target.value })} className="mt-1 h-9 w-full border border-line bg-panel-strong px-2 text-sm text-ink outline-none focus:border-accent" />
+            </label>
+            <SelectField label="Candidate" value={filters.candidate_id} onChange={(value) => setFilters({ ...filters, candidate_id: value })} options={options.candidates} allowEmpty={false} />
+            <SelectField label="Universe" value={filters.universe_id} onChange={(value) => setFilters({ ...filters, universe_id: value })} options={options.universes} allowEmpty={false} />
+            <SelectField label="Fold" value={filters.fold} onChange={(value) => setFilters({ ...filters, fold: value })} options={options.folds} />
+          </div>
+          <div className="mt-4 border border-line bg-panel-strong p-3 text-sm text-ink">{caseData.result_text}</div>
+        </Panel>
+
+        <Panel title="Case Timeline" icon={<Search size={16} />}>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-medium text-ink">{active?.title ?? NA}</div>
+            <div className="text-xs text-muted">{caseData.count} matching cases</div>
+          </div>
+          <div className="max-h-[520px] overflow-auto border border-line">
+            {caseData.cases.map((item, index) => {
               const isActive =
                 selectedCase &&
                 String(selectedCase.date) === String(item.date) &&
@@ -762,58 +1028,36 @@ function DecisionInvestigation() {
                   key={`${String(item.date)}-${String(item.fold)}-${String(item.candidate_id)}-${index}`}
                   onClick={() => {
                     setSelectedCase(item);
-                    loadDetail(item);
+                    loadDetail({
+                      date: item.date,
+                      fold: item.fold,
+                      candidate_id: item.candidate_id,
+                      universe_id: item.universe_id,
+                    });
                   }}
-                  className={`grid w-full grid-cols-[92px_54px_1fr] gap-2 border-b border-line px-3 py-2 text-left text-xs ${
+                  className={`grid w-full gap-2 border-b border-line px-3 py-3 text-left text-xs md:grid-cols-[92px_48px_1fr_120px_90px_1.2fr] ${
                     isActive ? "bg-accent/10 text-ink" : "bg-panel-strong text-muted hover:bg-panel"
                   }`}
                 >
                   <span>{asText(item.date)}</span>
                   <span>F{asText(item.fold)}</span>
-                  <span className="truncate">{asText(item.candidate_id)}</span>
+                  <span className="truncate">{asText(item.candidate_label)}</span>
+                  <span className="truncate">{asText(item.participation_state)}</span>
+                  <span>{formatMetric(item.long_budget, "long_budget")}</span>
+                  <span className="truncate">{asText(item.market_regime)} / 20d alpha {formatMetric(item.outcome_20d_vs_qqq, "realized_alpha_vs_qqq")}</span>
+                  <span className="md:col-span-6 truncate text-muted">{asText(item.key_module_state)}</span>
                 </button>
               );
             })}
           </div>
         </Panel>
-
-        <Panel
-          title="Advanced Controls"
-          icon={<Filter size={16} />}
-          actions={
-            <button
-              onClick={() =>
-                loadDetail({
-                  date: manual.date,
-                  fold: manual.fold,
-                  candidate_id: manual.candidate_id,
-                  universe_id: manual.universe_id,
-                })
-              }
-              className="flex h-9 items-center gap-2 border border-accent px-3 text-sm text-ink"
-            >
-              <Search size={14} />
-              Apply
-            </button>
-          }
-        >
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
-            <label className="text-xs text-muted">
-              Date
-              <input value={manual.date} onChange={(event) => setManual({ ...manual, date: event.target.value })} className="mt-1 h-9 w-full border border-line bg-panel-strong px-2 text-sm text-ink outline-none focus:border-accent" />
-            </label>
-            <SelectField label="Candidate" value={manual.candidate_id} onChange={(value) => setManual({ ...manual, candidate_id: value })} options={options.candidates} allowEmpty={false} />
-            <SelectField label="Universe" value={manual.universe_id} onChange={(value) => setManual({ ...manual, universe_id: value })} options={options.universes} allowEmpty={false} />
-            <SelectField label="Fold" value={manual.fold} onChange={(value) => setManual({ ...manual, fold: value })} options={options.folds} />
-            <SelectField label="Ticker" value={manual.ticker} onChange={(value) => setManual({ ...manual, ticker: value })} options={options.tickers} />
-            <SelectField label="Module" value={manual.module_name} onChange={(value) => setManual({ ...manual, module_name: value })} options={options.modules} />
-            <SelectField label="Horizon" value={manual.horizon} onChange={(value) => setManual({ ...manual, horizon: value })} options={options.horizons} />
-          </div>
-        </Panel>
       </div>
 
-      <Panel title="Deterministic Interpretation" icon={<ShieldCheck size={16} />}>
-        <BulletList items={detail.interpretation} />
+      <Panel title="Connected Detail" icon={<ShieldCheck size={16} />}>
+        <ComparisonChips chips={detail.comparison_chips} />
+        <div className="mt-4">
+          <BulletList items={detail.interpretation} />
+        </div>
       </Panel>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -852,6 +1096,10 @@ function DecisionInvestigation() {
 
       <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
         <Panel title="Active Modules" icon={<Layers3 size={16} />}>
+          <div className="mb-3 grid gap-3 md:grid-cols-2">
+            <SelectField label="Module detail filter" value={detailFilters.module_name} onChange={(value) => setDetailFilters({ ...detailFilters, module_name: value })} options={options.modules} />
+            <SelectField label="Outcome horizon filter" value={detailFilters.horizon} onChange={(value) => setDetailFilters({ ...detailFilters, horizon: value })} options={options.horizons} />
+          </div>
           <FieldGrid
             row={detail.decision}
             fields={[
@@ -868,12 +1116,25 @@ function DecisionInvestigation() {
           </div>
         </Panel>
         <Panel title="Selected Positions" icon={<Table2 size={16} />}>
+          <div className="mb-3">
+            <SelectField label="Ticker detail filter" value={detailFilters.ticker} onChange={(value) => setDetailFilters({ ...detailFilters, ticker: value })} options={options.tickers} />
+          </div>
           <DataTable rows={filteredPositions} limit={14} columns={["ticker", "rank", "base_score", "selected_flag", "leader_flag", "base_weight", "final_weight", "stop_flag", "pnl_contribution"]} />
         </Panel>
       </div>
 
       <Panel title="Outcome" icon={<BarChart3 size={16} />}>
         <DataTable rows={filteredOutcomes} limit={8} columns={["horizon", "realized_return", "realized_alpha_vs_qqq", "realized_alpha_vs_spy", "decision_helped_flag_vs_qqq", "decision_helped_flag_vs_control", "continuation_helped_flag", "backoff_helped_flag", "leader_helped_flag"]} />
+      </Panel>
+
+      <Panel title="Data Sources Used" icon={<FileText size={16} />}>
+        <div className="grid gap-2 md:grid-cols-2">
+          {(detail.data_sources ?? []).map((source) => (
+            <div key={source} className="break-all border border-line bg-panel-strong p-2 text-xs text-muted">
+              {source}
+            </div>
+          ))}
+        </div>
       </Panel>
     </div>
   );
@@ -902,14 +1163,14 @@ function ModuleOutcomeAudit() {
     { id: "modules", label: "Which modules activate most often?" },
   ];
   const answers: Record<string, string[]> = {
-    continuation: ["Continuation helped rates are grouped directly from outcome_cube by horizon."],
-    leader: ["Leader participation helped rates are grouped directly from outcome_cube by horizon."],
-    backoff: [
+    continuation: moduleData.explanations?.continuation ?? ["Continuation helped rates are grouped directly from outcome_cube by horizon."],
+    leader: moduleData.explanations?.leader ?? ["Leader participation helped rates are grouped directly from outcome_cube by horizon."],
+    backoff: moduleData.explanations?.backoff ?? [
       `Backoff count: ${formatMetric(moduleData.backoff_counts.backoff_count)}.`,
       `Hard backoff count: ${formatMetric(moduleData.backoff_counts.hard_backoff_count)}.`,
     ],
-    tickers: ["Ticker contribution is aggregated from selected position rows and realized PnL contribution fields."],
-    folds: ["Fold behavior uses helped-rate and alpha aggregates by fold and outcome horizon."],
+    tickers: moduleData.explanations?.tickers ?? ["Ticker contribution is aggregated from selected position rows and realized PnL contribution fields."],
+    folds: moduleData.explanations?.folds ?? ["Fold behavior uses helped-rate and alpha aggregates by fold and outcome horizon."],
     modules: moduleData.interpretation,
   };
 
@@ -1002,6 +1263,32 @@ function DataCubes() {
   return (
     <div className="space-y-4">
       <ErrorBanner message={cubeError || rawError} />
+      <Panel title="What problem does the DSS solve?" icon={<Target size={16} />}>
+        <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="border border-line bg-panel-strong p-4 text-sm leading-6 text-ink">{cubeData.problem ?? NA}</div>
+          <div className="border border-line bg-panel-strong p-4">
+            <div className="text-xs font-medium uppercase text-muted">Evidence Chain</div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {(cubeData.evidence_chain ?? []).map((item, index) => (
+                <span key={item} className="flex items-center gap-2 text-sm text-ink">
+                  <span className="border border-line bg-panel px-2 py-1">{item}</span>
+                  {index < (cubeData.evidence_chain?.length ?? 0) - 1 && <span className="text-muted">-&gt;</span>}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Panel>
+
+      <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+        <Panel title="Analytical Axes" icon={<GitBranch size={16} />}>
+          <DataTable rows={cubeData.analytical_axes ?? []} limit={12} columns={["axis", "meaning"]} />
+        </Panel>
+        <Panel title="Supported Operations" icon={<Workflow size={16} />}>
+          <DataTable rows={cubeData.operations ?? []} limit={12} columns={["operation", "meaning", "tables_used", "example_conclusion"]} />
+        </Panel>
+      </div>
+
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <Panel title="Physical Files" icon={<Database size={16} />}>
           <DataTable rows={cubeData.files} limit={10} columns={["cube", "file", "rows", "columns", "grain", "size_bytes"]} />

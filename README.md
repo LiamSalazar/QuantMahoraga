@@ -43,20 +43,25 @@ Mahoraga is a research-complete model baseline and auditable analysis system. It
 22. [Official Results](#official-results)
 23. [Extended Multiplier Robustness](#extended-multiplier-robustness)
 24. [Universe Robustness](#universe-robustness)
-25. [Physical Audit Cube Implementation](#physical-audit-cube-implementation)
-26. [Logical Audit Schema: Fact Constellation](#logical-audit-schema-fact-constellation)
-27. [Analytical Operations Supported by the Cubes](#analytical-operations-supported-by-the-cubes)
-28. [API and Frontend](#api-and-frontend)
-29. [Installation from Fresh Clone](#installation-from-fresh-clone)
-30. [Running the Official Baseline](#running-the-official-baseline)
-31. [Running Extended Analysis](#running-extended-analysis)
-32. [Running the API](#running-the-api)
-33. [Running the Frontend](#running-the-frontend)
-34. [Running Tests](#running-tests)
-35. [Troubleshooting](#troubleshooting)
-36. [Limitations](#limitations)
-37. [Future Work](#future-work)
-38. [References](#references)
+25. [What the DSS Adds Beyond the Backtest](#what-the-dss-adds-beyond-the-backtest)
+26. [DSS Evidence Chain](#dss-evidence-chain)
+27. [DSS Research Axes](#dss-research-axes)
+28. [How Research Questions Are Answered](#how-research-questions-are-answered)
+29. [Candidate Nomenclature](#candidate-nomenclature)
+30. [Physical Audit Cube Implementation](#physical-audit-cube-implementation)
+31. [Logical Audit Schema: Fact Constellation](#logical-audit-schema-fact-constellation)
+32. [Analytical Operations Supported by the Cubes](#analytical-operations-supported-by-the-cubes)
+33. [API and Frontend](#api-and-frontend)
+34. [Installation from Fresh Clone](#installation-from-fresh-clone)
+35. [Running the Official Baseline](#running-the-official-baseline)
+36. [Running Extended Analysis](#running-extended-analysis)
+37. [Running the API](#running-the-api)
+38. [Running the Frontend](#running-the-frontend)
+39. [Running Tests](#running-tests)
+40. [Troubleshooting](#troubleshooting)
+41. [Limitations](#limitations)
+42. [Future Work](#future-work)
+43. [References](#references)
 
 ## Project Overview
 
@@ -944,6 +949,95 @@ Extended universe robustness tests the official candidate on nearby universes.
 
 The alternate technology and growth universes retain positive results, though performance degrades outside the original 12-name universe. The non-technology negative-control universe has coverage materialized, but completed walk-forward metrics are not present in the recorded extended run.
 
+## What the DSS Adds Beyond the Backtest
+
+Aggregate backtests summarize whether the strategy performed well. They do not explain why a decision was made, which tickers carried the exposure, which modules were active, what market context surrounded the decision, or whether the decision helped after a future horizon.
+
+The Decision Support System (DSS) is a research interpretation layer over existing artifacts. It links official baseline outputs, extended robustness outputs, universe robustness outputs, audit cubes, fold summaries, validation tables, reports, and manifests. It does not change the official baseline logic, regenerate official baseline results, call external AI services, or create unsupported metrics.
+
+The DSS is not a trading interface and not a generic database browser. Its purpose is to answer model-research questions with deterministic evidence. Raw tables remain available, but they are secondary to scorecards, source metadata, research questions, guided cases, and drill-down interpretation.
+
+## DSS Evidence Chain
+
+The DSS uses the following evidence chain:
+
+```text
+Decision state -> Selected positions -> Active modules -> Future outcome -> Market context -> Research conclusion
+```
+
+| Evidence step | Definition | Main sources |
+|---|---|---|
+| Decision state | The date-level allocator and risk state: budget, participation state, backoff, continuation probability, structural probability, expected exposure and turnover. | `decision_date_cube.parquet`, official allocator audit. |
+| Selected positions | The ticker-level book selected by the model, including scores, ranks, weights, leader flags, stops, forward returns and contribution. | `position_cube.parquet`. |
+| Active modules | The branch, threshold and signal-strength traces for model components on a decision date. | `module_trace_cube.parquet`. |
+| Future outcome | Realized returns and benchmark-relative helped flags after 1, 5 and 20 trading days. | `outcome_cube.parquet`. |
+| Market context | Benchmark returns, drawdown, volatility, breadth and regime proxy around the decision. | `market_context_cube.parquet`. |
+| Research conclusion | A deterministic interpretation derived from the available evidence and documented limitations. | API `/dss/research-questions`, reports and README methodology. |
+
+## DSS Research Axes
+
+An analytical axis is a column or concept used to slice, join, aggregate or compare evidence.
+
+| Axis | Definition | Example use |
+|---|---|---|
+| `date` | Trading decision date. | Review one decision and its future outcomes. |
+| `fold` | Walk-forward out-of-sample segment. | Identify weaker validation periods. |
+| `candidate` | Official or perturbed multiplier candidate. | Compare official baseline with robustness stresses. |
+| `universe` | Eligible ticker set. | Check whether behavior changes in nearby universes. |
+| `ticker` | Security selected or evaluated. | Attribute contribution and selected frequency. |
+| `module` | Model component or policy branch. | Audit continuation, leader participation or backoff states. |
+| `horizon` | Future outcome window. | Compare 1d, 5d and 20d helped rates. |
+| `market regime` | Benchmark and path context around the decision. | Separate bull participation from fragile regimes. |
+
+## How Research Questions Are Answered
+
+Each DSS question is answered by a deterministic evaluator. The evaluator lists data sources, methodology, evidence values, conclusion, confidence level and limitation. If a required metric is absent, the API returns `Not available in current outputs`.
+
+| Question | Methodology | Technical data sources | Metrics used | Interpretation rule | Current conclusion | Limitation |
+|---|---|---|---|---|---|---|
+| Is the official candidate a narrow parameter spike? | Read extended multiplier summary, plateau radius and sensitivity ranking. Check whether degradation is global or localized. | `extended_multiplier_summary.csv`, `plateau_radius_by_axis.csv`, `sensitivity_ranking.csv`, `plateau_radius_report.md`. | Robust-region share, distance to decay, sampled candidates, most sensitive axis, severe fold damage. | If robust share is substantial and degradation is concentrated on one axis, the official point is not treated as a narrow global spike. | Current outputs do not support global parameter fragility; weakness is localized around budget underdeployment. | Applies only to sampled perturbations. |
+| Is budget sensitivity fatal or localized? | Compare one-dimensional and two-dimensional budget candidates against the official candidate. | `extended_multiplier_summary.csv`, `sensitivity_ranking.csv`, `plateau_radius_by_axis.csv`. | CAGR, Sharpe, Sortino, MaxDD, robust flag, severe fold damage, plateau radius. | If low-budget candidates degrade while moderate high-budget candidates remain robust, weakness is asymmetric and localized. | Current outputs indicate budget sensitivity is mainly a downside-underdeployment issue. | Not all possible budget values are sampled. |
+| Does continuation help? | Group helped flags by horizon and compare short versus longer horizons. | `continuation_activation_audit.csv`, `outcome_cube.parquet`, official continuation diagnostic. | Continuation helped rate by horizon, activation rate, hit rates, edge versus no activation. | Improvement from 1d to 20d supports longer-horizon usefulness. | Current audit artifacts show continuation helped rate is stronger at longer horizons. | Helped rate is ex-post association, not causal proof. |
+| Does leader participation help? | Group leader helped flags by horizon and inspect leader ticker contribution. | `leader_participation_audit.csv`, `position_cube.parquet`, `outcome_cube.parquet`. | Leader helped rate, selected frequency, final weight, PnL contribution. | Improvement at 5d or 20d, read with ticker contribution, supports leader participation. | Current artifacts show leader participation is more useful at longer horizons. | Leadership concentration can be regime-specific. |
+| Does backoff help? | Count backoff and hard-backoff states, then compare helped rates by horizon. | `backoff_audit.csv`, `decision_date_cube.parquet`, `outcome_cube.parquet`. | Backoff count, hard backoff count, helped rate by horizon, drawdown change if available. | Backoff is supportive when fragile-state reductions are followed by better relative outcomes. | Current artifacts show backoff helped rates improve at longer horizons. | Association is not causal proof. |
+| Which folds are weak? | Read official fold summary and join fold/horizon outcome aggregates. | `fold_summary_official.csv`, `outcome_cube.parquet`. | Fold CAGR, Sharpe, Sortino, MaxDD, alpha, exposure, helped rates. | Folds with low Sharpe, weak CAGR versus benchmarks, or poor helped rates are marked weaker. | Fold-level evidence shows all official folds beat the historical control on CAGR, while some folds trail QQQ or SPY. | Fold diagnosis does not identify one causal module without drill-down evidence. |
+| Which tickers drive returns? | Aggregate selected position rows by ticker. | `position_cube.parquet`, `stop_loss_audit.csv`. | Selected frequency, leader frequency, total PnL contribution, mean final weight. | Contribution must be read with frequency and weight. | Current cube identifies top positive and negative contributors from selected positions. | Contribution is path-dependent and not a standalone skill metric. |
+| Does the model generalize? | Filter universe robustness rows for the official candidate and compare completed runs. | `universe_robustness_summary.csv`, `universe_coverage_audit.csv`, `universe_robustness_report.md`. | Run status, usable count, CAGR, Sharpe, Sortino, MaxDD, alpha. | Positive completed technology/growth universe runs support local portability; missing negative-control metrics are not inferred. | Nearby technology/growth universes remain positive but generally degrade away from the original universe. | The negative-control universe has no completed walk-forward metrics in the current outputs. |
+| What evidence supports the official baseline? | Combine stitched performance, fold validation, Newey-West alpha, p/q values and robustness evidence. | `stitched_comparison_official.csv`, `fold_summary_official.csv`, `alpha_nw_official.csv`, `pvalue_qvalue_official.csv`, extended robustness outputs. | CAGR, Sharpe, Sortino, MaxDD, alpha, beta, p-values, q-values, fold behavior. | Support requires economic performance, statistical evidence, fold behavior and robustness evidence together. | Current outputs support the official baseline as the frozen long-only research reference. | Historical support is not a guarantee of future performance. |
+
+## Candidate Nomenclature
+
+The official candidate id is:
+
+```text
+B1.05_C1.10_L1.10_R1.05
+```
+
+| Code | Meaning | Official value | Interpretation |
+|---|---|---:|---|
+| `B` | Budget multiplier | 1.05 | Controls how much long exposure the system can express. |
+| `C` | Conviction multiplier | 1.10 | Controls signal expression strength. |
+| `L` | Leader participation multiplier | 1.10 | Controls conditional participation in market leaders. |
+| `R` | Risk backoff strength | 1.05 | Controls defensive backoff strength. |
+
+Candidate families:
+
+| Family | Meaning |
+|---|---|
+| Official baseline | Frozen reference candidate: `B1.05_C1.10_L1.10_R1.05`. |
+| One-dimensional budget sweep | Budget changes while conviction, leader and backoff stay fixed. |
+| One-dimensional conviction sweep | Conviction changes while budget, leader and backoff stay fixed. |
+| One-dimensional leader sweep | Leader participation changes while budget, conviction and backoff stay fixed. |
+| One-dimensional backoff sweep | Backoff strength changes while budget, conviction and leader stay fixed. |
+| Two-dimensional sensitive-axis candidate | Two sensitive axes move together in the sampled grid. |
+| Controlled extreme | A deliberate stress case, not a proposed baseline. |
+| Pro-risk extreme | Higher participation and signal expression with weaker defense. |
+| Pro-defense extreme | Lower participation and stronger defense. |
+| All-high | All sampled multipliers are above the official value. |
+| All-low | All sampled multipliers are below the official value. |
+| Non-robust candidate | Candidate failed the recorded robust-region flag. |
+| Representative cube candidate | Candidate has granular decision, position, module and outcome traces. |
+
 ## Physical Audit Cube Implementation
 
 The audit layer is stored as Parquet files generated by Python inside:
@@ -1023,52 +1117,88 @@ Shared logical dimensions:
 
 These dimensions are logical dimensions embedded as columns in the Parquet tables. They are not currently stored as separate physical `dim_*` files.
 
+Logical dimensions table:
+
+| Logical dimension | Description | Where it appears |
+|---|---|---|
+| `dim_date` | Trading date or decision date. | All cubes, with `decision_date` in the outcome cube. |
+| `dim_fold` | Walk-forward fold id and test segment. | Decision, position, module trace and outcome cubes. |
+| `dim_candidate` | Candidate id, role and multiplier vector. | Decision, position, module trace and outcome cubes. |
+| `dim_universe` | Universe id and ticker eligibility context. | Decision, position, module trace, outcome and universe robustness outputs. |
+| `dim_ticker` | Individual security. | Position cube and ticker contribution audits. |
+| `dim_module` | Model component or policy branch. | Module trace cube and module audit summaries. |
+| `dim_horizon` | Forward outcome window. | Outcome cube and module helped-rate audit CSVs. |
+| `dim_market_regime` | Benchmark, drawdown, volatility, breadth and regime proxy. | Market context cube and decision joins. |
+
+Fact-like tables table:
+
+| Fact-like table | Grain | Keys | Measures | Questions answered |
+|---|---|---|---|---|
+| `decision_date_cube` | date x fold x candidate x universe | `date`, `fold`, `candidate_id`, `universe_id` | budget, participation state, backoff, continuation, structural probability, expected exposure, expected turnover | What state was the model in on this date? |
+| `position_cube` | date x ticker x fold x candidate x universe | `date`, `ticker`, `fold`, `candidate_id`, `universe_id` | score, rank, selected flag, weights, leader flag, stop flag, next returns, contribution | Which names were selected and what did they contribute? |
+| `module_trace_cube` | date x module x fold x candidate x universe | `date`, `module_name`, `fold`, `candidate_id`, `universe_id` | branch, threshold state, signal strength, JSON summaries | Which modules were active and what branch did they take? |
+| `outcome_cube` | decision_date x horizon x fold x candidate x universe | `decision_date`, `horizon`, `fold`, `candidate_id`, `universe_id` | realized return, alpha versus benchmarks, helped flags, exposure, turnover | Did the decision help after 1d, 5d or 20d? |
+| `market_context_cube` | date | `date` | QQQ/SPY return, drawdown, volatility, breadth, VIX, regime proxy | What market context surrounded the decision? |
+
+Compact fact-dimension relationship:
+
 ```mermaid
-flowchart TB
-    subgraph DIMS["Logical dimensions embedded in Parquet"]
-        D1["dim_date\nAttributes: date, year, month, quarter, trading period"]
-        D2["dim_fold\nAttributes: fold id, fold start, fold end, OOS period"]
-        D3["dim_candidate\nAttributes: candidate_id, budget, conviction, leader, backoff, sweep role"]
-        D4["dim_universe\nAttributes: universe_id, ticker count, coverage, universe family"]
-        D5["dim_ticker\nAttributes: ticker, sector/family if available, selected flag context"]
-        D6["dim_module\nAttributes: module_name, branch, threshold state"]
-        D7["dim_horizon\nAttributes: 1d, 5d, 20d"]
-        D8["dim_market_regime\nAttributes: drawdown, volatility, breadth, regime proxy"]
-    end
+flowchart LR
+    D["date / fold / candidate / universe"] --> A["decision_date_cube"]
+    D --> B["position_cube"]
+    D --> C["module_trace_cube"]
+    D --> E["outcome_cube"]
+    T["ticker"] --> B
+    M["module"] --> C
+    H["horizon"] --> E
+    R["market regime"] --> F["market_context_cube"]
+    F --> A
+    A --> E
+```
 
-    subgraph FACTS["Fact-like Parquet tables"]
-        F1["decision_date_cube\nGrain: date x fold x candidate x universe"]
-        F2["position_cube\nGrain: date x ticker x fold x candidate x universe"]
-        F3["module_trace_cube\nGrain: date x module x fold x candidate x universe"]
-        F4["outcome_cube\nGrain: decision_date x horizon x fold x candidate x universe"]
-        F5["market_context_cube\nGrain: date"]
-    end
+Decision drill-down relationship:
 
-    D1 --> F1
-    D2 --> F1
-    D3 --> F1
-    D4 --> F1
+```mermaid
+flowchart LR
+    A["Decision state"] --> B["Selected positions"]
+    A --> C["Active modules"]
+    A --> D["Future outcome"]
+    E["Market context"] --> A
+    B --> F["Ticker contribution"]
+    C --> G["Module audit"]
+    D --> H["Research conclusion"]
+```
 
-    D1 --> F2
-    D2 --> F2
-    D3 --> F2
-    D4 --> F2
-    D5 --> F2
+Complete Mahoraga system architecture:
 
-    D1 --> F3
-    D2 --> F3
-    D3 --> F3
-    D4 --> F3
-    D6 --> F3
+```mermaid
+flowchart LR
+    A["data inputs"] --> B["preparation"]
+    B --> C["baseline engine"]
+    C --> D["portfolio construction"]
+    D --> E["evaluation"]
+    E --> F["robustness"]
+    F --> G["audit cubes"]
+    G --> H["API"]
+    H --> I["DSS frontend"]
+    E --> J["reports / paper"]
+```
 
-    D1 --> F4
-    D2 --> F4
-    D3 --> F4
-    D4 --> F4
-    D7 --> F4
+System activity flow:
 
-    D1 --> F5
-    D8 --> F5
+```mermaid
+flowchart LR
+    A["load configs"] --> B["load data"]
+    B --> C["clean"]
+    C --> D["feature engineering"]
+    D --> E["alpha engine"]
+    E --> F["allocation / risk"]
+    F --> G["backtest"]
+    G --> H["validation"]
+    H --> I["reports"]
+    I --> J["cubes"]
+    J --> K["API"]
+    K --> L["DSS"]
 ```
 
 ### `decision_date_cube`
@@ -1217,6 +1347,14 @@ Main API endpoints:
 | `GET /market-context` | Filtered market-context records. |
 | `GET /universes/summary` | Universe robustness summary. |
 | `GET /metadata/options` | Candidate, universe, fold, ticker, module, and horizon options for DSS controls. |
+| `GET /dss/scorecard` | Unified metric registry spanning official baseline, extended robustness, universe robustness, audit cubes, fold outputs and diagnostics. |
+| `GET /dss/research-questions` | Dynamic question answers with methodology, evidence values, confidence and limitations. |
+| `GET /dss/candidates` | Candidate labels, roles, changed axes, robust flags and interpretations. |
+| `GET /dss/folds` | Fold-level official metrics, weak spots and deterministic interpretations. |
+| `GET /dss/model-diagnostics` | Available ML/signal diagnostics plus unavailable diagnostic metrics. |
+| `GET /dss/performance-risk` | Performance/risk metrics and sampled official performance series. |
+| `GET /dss/decision-cases` | Guided preset definitions and contextual case timelines. |
+| `GET /dss/cube-operations` | DSS problem statement, evidence chain, axes and supported cube operations. |
 | `GET /dss/overview` | Official metrics, robustness summary, universe summary, artifacts, and deterministic research narrative. |
 | `GET /dss/robustness/budget` | Official and budget-axis candidates with deterministic budget sensitivity interpretation. |
 | `GET /dss/robustness/plateau` | Plateau by axis, sensitivity ranking, and worst-fold degradation rows. |
@@ -1230,11 +1368,11 @@ Frontend views:
 
 | View | Purpose |
 |---|---|
-| Research Overview | Official baseline metrics, robustness conclusion, main sensitivity, universe summary, artifact inventory, and deterministic narrative. |
-| Robustness DSS | Research-question cards, KPI strip, budget sensitivity panel, plateau view, sensitivity ranking, robustness figures, and worst-fold degradation. |
-| Decision Investigation | Guided presets, dropdown metadata controls, decision summary, market context, active modules, selected positions, outcomes, and short rule-based interpretation. |
-| Module and Outcome Audit | Continuation, leader participation, backoff, ticker contribution, fold behavior, and module state evidence. |
-| Data Cubes | Physical file list, schema preview, logical dimensions, relationships, sample query shapes, and secondary raw cube viewer. |
+| Research Overview | Official baseline identity, nomenclature, grouped scorecards, dynamic research questions, fold summary and source inventory. |
+| Robustness DSS | Dynamic robustness questions, budget-axis evidence, plateau and sensitivity views, candidate explanations, worst-fold degradation and secondary static figures. |
+| Decision Investigation | Guided preset cards, filter rail, case timeline, connected detail panel, comparison chips, modules, positions, outcomes and data sources. |
+| Module and Outcome Audit | Continuation, leader participation, backoff, ticker contribution, fold behavior, module state evidence and dynamic explanations. |
+| Data Cubes | DSS problem statement, evidence chain, analytical axes, supported operations, physical files, schema preview and secondary raw cube access. |
 
 Run the API:
 

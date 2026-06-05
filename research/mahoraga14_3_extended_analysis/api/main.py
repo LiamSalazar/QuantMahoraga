@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -16,6 +17,11 @@ OUTPUTS = PHASE_ROOT / "outputs"
 OFFICIAL_CANDIDATE_ID = "B1.05_C1.10_L1.10_R1.05"
 OFFICIAL_UNIVERSE_ID = "base_universe_12"
 NOT_AVAILABLE = "Not available in current cube"
+SRC_ROOT = PHASE_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from extended_analysis import metric_registry as registry
 
 app = FastAPI(title="Mahoraga 14.3 Extended Analysis API", version="1.0.0")
 app.add_middleware(
@@ -397,6 +403,62 @@ def metadata_options() -> Dict[str, Any]:
     }
 
 
+@app.get("/dss/scorecard")
+def dss_scorecard() -> Dict[str, Any]:
+    return registry.build_scorecard()
+
+
+@app.get("/dss/research-questions")
+def dss_research_questions() -> Dict[str, Any]:
+    return registry.research_questions()
+
+
+@app.get("/dss/candidates")
+def dss_candidates() -> Dict[str, Any]:
+    return registry.candidate_metadata()
+
+
+@app.get("/dss/folds")
+def dss_folds() -> Dict[str, Any]:
+    return registry.fold_summaries()
+
+
+@app.get("/dss/model-diagnostics")
+def dss_model_diagnostics() -> Dict[str, Any]:
+    return registry.model_diagnostics()
+
+
+@app.get("/dss/performance-risk")
+def dss_performance_risk() -> Dict[str, Any]:
+    return registry.performance_risk()
+
+
+@app.get("/dss/decision-cases")
+def dss_decision_cases(
+    preset_id: str = "official-baseline",
+    date_start: Optional[str] = None,
+    date_end: Optional[str] = None,
+    fold: Optional[int] = None,
+    candidate_id: Optional[str] = None,
+    universe_id: Optional[str] = None,
+    limit: int = Query(120, ge=1, le=500),
+) -> Dict[str, Any]:
+    return registry.decision_cases(
+        preset_id,
+        date_start=date_start,
+        date_end=date_end,
+        fold=fold,
+        candidate_id=candidate_id,
+        universe_id=universe_id,
+        limit=limit,
+    )
+
+
+@app.get("/dss/cube-operations")
+def dss_cube_operations() -> Dict[str, Any]:
+    return registry.cube_operations()
+
+
 @app.get("/dss/overview")
 def dss_overview() -> Dict[str, Any]:
     summary = candidate_summary()
@@ -658,11 +720,11 @@ def dss_decision_detail(
     if "universe_id" in selected.columns:
         selected = selected[selected["universe_id"] == universe_id]
     if date and "date" in selected.columns:
-        selected = selected[selected["date"].astype(str) == date]
+        selected = selected[pd.to_datetime(selected["date"], errors="coerce").dt.strftime("%Y-%m-%d") == date]
     if fold is not None and "fold" in selected.columns:
         selected = selected[selected["fold"] == fold]
     if selected.empty and date:
-        selected = decisions_df[decisions_df["date"].astype(str) == date] if "date" in decisions_df.columns else pd.DataFrame()
+        selected = decisions_df[pd.to_datetime(decisions_df["date"], errors="coerce").dt.strftime("%Y-%m-%d") == date] if "date" in decisions_df.columns else pd.DataFrame()
     if selected.empty:
         selected = decisions_df.head(1)
 
@@ -670,7 +732,7 @@ def dss_decision_detail(
     if not decision:
         return {"decision": None, "positions": [], "modules": [], "outcomes": [], "market_context": None, "interpretation": [NOT_AVAILABLE]}
 
-    ddate = str(decision.get("date"))
+    ddate = pd.Timestamp(decision.get("date")).strftime("%Y-%m-%d") if decision.get("date") else ""
     dfold = decision.get("fold")
     dcandidate = str(decision.get("candidate_id"))
     duniverse = str(decision.get("universe_id"))
@@ -688,7 +750,7 @@ def dss_decision_detail(
     outcomes_df = outcome_cube()
     outcomes = outcomes_df.copy()
     if "decision_date" in outcomes.columns:
-        outcomes = outcomes[outcomes["decision_date"].astype(str) == ddate]
+        outcomes = outcomes[pd.to_datetime(outcomes["decision_date"], errors="coerce").dt.strftime("%Y-%m-%d") == ddate]
     if "fold" in outcomes.columns and dfold is not None:
         outcomes = outcomes[outcomes["fold"] == int(dfold)]
     if "candidate_id" in outcomes.columns:
@@ -699,7 +761,7 @@ def dss_decision_detail(
         outcomes = outcomes.sort_values("horizon")
 
     market_df = market_cube()
-    market = market_df[market_df["date"].astype(str) == ddate] if not market_df.empty and "date" in market_df.columns else pd.DataFrame()
+    market = market_df[pd.to_datetime(market_df["date"], errors="coerce").dt.strftime("%Y-%m-%d") == ddate] if not market_df.empty and "date" in market_df.columns else pd.DataFrame()
 
     interpretation: List[str] = []
     participation = decision.get("participation_state") or NOT_AVAILABLE
@@ -729,6 +791,27 @@ def dss_decision_detail(
     else:
         interpretation.append(f"20-day QQQ helped flag: {NOT_AVAILABLE}.")
 
+    def outcome_chip(horizon: int, column: str, label: str) -> Dict[str, Any]:
+        if outcomes.empty or "horizon" not in outcomes.columns or column not in outcomes.columns:
+            return {"label": label, "value": None, "status": "unknown"}
+        subset = outcomes[pd.to_numeric(outcomes["horizon"], errors="coerce") == horizon]
+        row = first_record(subset)
+        value = row.get(column) if row else None
+        if value is None:
+            return {"label": label, "value": None, "status": "unknown"}
+        passed = bool(value)
+        return {"label": label, "value": passed, "status": "positive" if passed else "negative"}
+
+    comparison_chips = [
+        outcome_chip(1, "decision_helped_flag_vs_qqq", "Beat QQQ at 1d?"),
+        outcome_chip(5, "decision_helped_flag_vs_qqq", "Beat QQQ at 5d?"),
+        outcome_chip(20, "decision_helped_flag_vs_qqq", "Beat QQQ at 20d?"),
+        outcome_chip(20, "decision_helped_flag_vs_control", "Beat control?"),
+        {"label": "Hard backoff?", "value": hard_backoff, "status": "active" if hard_backoff else "inactive"},
+        {"label": "Leader active?", "value": bool(pd.to_numeric(pos.get("leader_flag"), errors="coerce").fillna(0).sum() > 0) if not pos.empty and "leader_flag" in pos.columns else None, "status": "active" if not pos.empty and "leader_flag" in pos.columns and pd.to_numeric(pos.get("leader_flag"), errors="coerce").fillna(0).sum() > 0 else "inactive"},
+        {"label": "Continuation active?", "value": bool(isinstance(continuation_p, (float, int)) and continuation_p >= 0.5), "status": "active" if isinstance(continuation_p, (float, int)) and continuation_p >= 0.5 else "inactive"},
+    ]
+
     return {
         "decision": decision,
         "positions": records(pos, 20)["rows"],
@@ -736,6 +819,14 @@ def dss_decision_detail(
         "outcomes": records(outcomes, 20)["rows"],
         "market_context": first_record(market),
         "interpretation": interpretation,
+        "comparison_chips": comparison_chips,
+        "data_sources": [
+            "research/mahoraga14_3_extended_analysis/outputs/audit_cube/decision_date_cube.parquet",
+            "research/mahoraga14_3_extended_analysis/outputs/audit_cube/position_cube.parquet",
+            "research/mahoraga14_3_extended_analysis/outputs/audit_cube/module_trace_cube.parquet",
+            "research/mahoraga14_3_extended_analysis/outputs/audit_cube/outcome_cube.parquet",
+            "research/mahoraga14_3_extended_analysis/outputs/audit_cube/market_context_cube.parquet",
+        ],
     }
 
 
@@ -815,6 +906,45 @@ def dss_module_effectiveness(
             avg_exposure=("realized_exposure", "mean"),
         ).reset_index().sort_values(["fold", "horizon"])
 
+    def rate_at(rows: List[Dict[str, Any]], horizon: int) -> Optional[float]:
+        for row in rows:
+            if int(row.get("horizon", -1)) == horizon and row.get("helped_rate") is not None:
+                return float(row["helped_rate"])
+        return None
+
+    continuation_1d = rate_at(continuation, 1)
+    continuation_20d = rate_at(continuation, 20)
+    leader_1d = rate_at(leader, 1)
+    leader_20d = rate_at(leader, 20)
+    backoff_1d = rate_at(backoff, 1)
+    backoff_20d = rate_at(backoff, 20)
+    weakest_fold = first_record(fold_behavior.sort_values("helped_rate").head(1)) if not fold_behavior.empty and "helped_rate" in fold_behavior.columns else None
+    explanations = {
+        "continuation": [
+            "Continuation helped rates are grouped directly from outcome_cube by horizon.",
+            "Continuation appears more useful at longer horizons in current audit artifacts." if continuation_20d is not None and continuation_1d is not None and continuation_20d > continuation_1d else "Current continuation helped rates do not improve from 1d to 20d.",
+        ],
+        "leader": [
+            "Leader helped rates are grouped directly from outcome_cube by horizon.",
+            "Leader participation appears more useful at longer horizons in current audit artifacts." if leader_20d is not None and leader_1d is not None and leader_20d > leader_1d else "Current leader helped rates do not improve from 1d to 20d.",
+            "Leader participation should be read together with technology/growth leadership concentration and ticker contribution.",
+        ],
+        "backoff": [
+            f"Backoff count: {backoff_counts.get('backoff_count')}.",
+            f"Hard backoff count: {backoff_counts.get('hard_backoff_count')}.",
+            "Backoff helped rate improves at longer horizon in current audit artifacts." if backoff_20d is not None and backoff_1d is not None and backoff_20d > backoff_1d else "Current backoff helped rates do not show clear improvement from 1d to 20d.",
+            "Helped rate is ex-post association, not causal proof.",
+        ],
+        "tickers": [
+            "Ticker contribution is influenced by selected frequency, weight and realized returns.",
+            "High contribution should be read together with selected frequency and mean weight.",
+        ],
+        "folds": [
+            f"Weakest helped-rate cell is fold {weakest_fold.get('fold')} at horizon {weakest_fold.get('horizon')}d." if weakest_fold else NOT_AVAILABLE,
+            "Fold weakness can be short-horizon or long-horizon, so both horizon and alpha columns matter.",
+        ],
+    }
+
     return {
         "continuation": continuation,
         "leader": leader,
@@ -827,6 +957,7 @@ def dss_module_effectiveness(
             "Helped rates are simple deterministic means of helped-flag columns in the outcome cube.",
             "Module activation counts are read from module trace rows and do not infer hidden model logic.",
         ],
+        "explanations": explanations,
     }
 
 
@@ -894,7 +1025,12 @@ def dss_data_cubes() -> Dict[str, Any]:
         )
         schemas[name] = list(df.columns)
 
+    operation_data = registry.cube_operations()
     return {
+        "problem": operation_data["problem"],
+        "evidence_chain": operation_data["evidence_chain"],
+        "analytical_axes": operation_data["analytical_axes"],
+        "operations": operation_data["operations"],
         "files": files,
         "schemas": schemas,
         "logical_dimensions": ["date", "fold", "candidate", "universe", "ticker", "module", "horizon", "market regime"],
