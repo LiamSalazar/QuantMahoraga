@@ -17,3 +17,5 @@ news_raw_gdelt_en.parquet
 news_raw_gdelt.parquet
 news_raw_gdelt.jsonl
 ingest_manifest.json
+
+/home/liam/QuantMahoraga/research/mahoraga14_3_dss_postgres/.venv
