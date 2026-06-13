@@ -1,0 +1,13 @@
+[project]
+name = "mahoraga14-3-dss-postgres"
+version = "0.1.0"
+description = "Mahoraga Quant DSS / Research Intelligence Layer over frozen Mahoraga14_3 artifacts."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 140

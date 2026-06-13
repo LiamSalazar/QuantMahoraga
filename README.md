@@ -158,6 +158,7 @@ The objective is not framed as beating one earlier Mahoraga version. Version com
 | `research/mahoraga14_3_extended_analysis/` | Extended robustness, universe robustness, audit cubes, API, and frontend. | Research-only audit layer over the frozen baseline. |
 | `research/mahoraga14_3_extended_analysis/api/` | FastAPI app that reads materialized outputs. | Inspection API, not a live trading service. |
 | `research/mahoraga14_3_extended_analysis/frontend/` | React/TypeScript/Tailwind frontend for the extended analysis. | Inspection interface, not a trading UI. |
+| `research/mahoraga14_3_dss_postgres/` | Mahoraga Quant DSS / Research Intelligence Layer with Polars ETL, Parquet dev mode, optional Postgres OLTP/DW/marts, FastAPI, and interactive React frontend. | Additive DSS layer only; does not modify or recalibrate the frozen baseline. |
 | `research/legacy/` | Older research versions and related archives. | Historical context only unless explicitly revived in a new research branch. |
 | `research/mahoraga15A*` | Short-side and long-short research branches or partial archives. | Research-only, not part of the official long-only baseline. |
 | `shared/` | Shared utilities, currently centered on repository path discovery. | Keep minimal and broadly reusable. |

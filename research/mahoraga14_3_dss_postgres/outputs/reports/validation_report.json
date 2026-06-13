@@ -1,0 +1,118 @@
+{
+  "generated_at": "2026-06-13T20:06:42.162340+00:00",
+  "passed": true,
+  "checks": [
+    {
+      "check_name": "dim_date_exists_and_has_rows",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 2295,
+      "expected_value": "> 0",
+      "table_name": "dim_date"
+    },
+    {
+      "check_name": "dim_candidate_exists_and_has_rows",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 42,
+      "expected_value": "> 0",
+      "table_name": "dim_candidate"
+    },
+    {
+      "check_name": "dim_universe_exists_and_has_rows",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 5,
+      "expected_value": "> 0",
+      "table_name": "dim_universe"
+    },
+    {
+      "check_name": "dim_fold_exists_and_has_rows",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 5,
+      "expected_value": "> 0",
+      "table_name": "dim_fold"
+    },
+    {
+      "check_name": "fact_decision_state_exists_and_has_rows",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 13770,
+      "expected_value": "> 0",
+      "table_name": "fact_decision_state"
+    },
+    {
+      "check_name": "fact_position_daily_exists_and_has_rows",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 165240,
+      "expected_value": "> 0",
+      "table_name": "fact_position_daily"
+    },
+    {
+      "check_name": "fact_module_trace_exists_and_has_rows",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 96390,
+      "expected_value": "> 0",
+      "table_name": "fact_module_trace"
+    },
+    {
+      "check_name": "fact_outcome_exists_and_has_rows",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 41310,
+      "expected_value": "> 0",
+      "table_name": "fact_outcome"
+    },
+    {
+      "check_name": "fact_candidate_metric_exists_and_has_rows",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 57,
+      "expected_value": "> 0",
+      "table_name": "fact_candidate_metric"
+    },
+    {
+      "check_name": "fact_whatif_exists_and_has_rows",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 402,
+      "expected_value": "> 0",
+      "table_name": "fact_whatif"
+    },
+    {
+      "check_name": "fact_position_daily_duplicate_key_check",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 0,
+      "expected_value": "0",
+      "table_name": "fact_position_daily"
+    },
+    {
+      "check_name": "fact_outcome_duplicate_key_check",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 0,
+      "expected_value": "0",
+      "table_name": "fact_outcome"
+    },
+    {
+      "check_name": "fact_decision_state_duplicate_key_check",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 0,
+      "expected_value": "0",
+      "table_name": "fact_decision_state"
+    },
+    {
+      "check_name": "demo_whatif_rows_flagged",
+      "severity": "error",
+      "passed": true,
+      "observed_value": 0,
+      "expected_value": "0",
+      "table_name": "fact_whatif"
+    }
+  ]
+}

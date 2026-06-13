@@ -9,6 +9,9 @@ mahoraga_env/
 __pycache__/
 *.py[cod]
 
+**/frontend/node_modules/
+**/frontend/dist/
+
 news_raw_gdelt_en.csv
 news_raw_gdelt_en.parquet
 news_raw_gdelt.parquet

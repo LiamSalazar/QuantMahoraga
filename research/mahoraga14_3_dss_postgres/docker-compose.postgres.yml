@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: mahoraga-dss-postgres
+    environment:
+      POSTGRES_DB: mahoraga_dss
+      POSTGRES_USER: mahoraga
+      POSTGRES_PASSWORD: mahoraga
+    ports:
+      - "5432:5432"
+    volumes:
+      - mahoraga_dss_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mahoraga -d mahoraga_dss"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  mahoraga_dss_pgdata:
