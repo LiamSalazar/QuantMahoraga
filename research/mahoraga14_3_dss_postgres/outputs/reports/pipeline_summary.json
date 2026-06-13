@@ -1,13 +1,13 @@
 {
-  "run_id": "dss_20260613T200641Z",
-  "profile": "small",
-  "mode": "parquet",
+  "run_id": "dss_20260613T225425Z",
+  "profile": "standard",
+  "mode": "postgres",
   "baseline_modified": false,
-  "total_rows_written": 492687,
-  "real_rows_written_estimate": 492327,
-  "demo_rows_written": 360,
-  "expected_real_min_rows_for_profile": 1,
-  "real_row_target_met": true,
+  "total_rows_written": 496967,
+  "real_rows_written_estimate": 494467,
+  "demo_rows_written": 2500,
+  "expected_real_min_rows_for_profile": 4000000,
+  "real_row_target_met": false,
   "row_counts": {
     "research_run": 1,
     "data_snapshot": 1,
@@ -21,7 +21,7 @@
     "dim_module": 7,
     "dim_regime": 6,
     "dim_horizon": 4,
-    "dim_scenario": 402,
+    "dim_scenario": 2542,
     "dim_metric": 9,
     "fact_market_bar": 4590,
     "fact_signal_daily": 165240,
@@ -33,10 +33,10 @@
     "fact_robustness_surface": 456,
     "fact_cost_sensitivity": 6,
     "fact_universe_sensitivity": 15,
-    "fact_whatif": 402,
+    "fact_whatif": 2542,
     "fact_path_recursive": 2295,
     "fact_data_quality": 14
   },
   "validation_passed": true,
-  "generated_at": "2026-06-13T20:06:42.177009+00:00"
+  "generated_at": "2026-06-13T22:54:26.188906+00:00"
 }

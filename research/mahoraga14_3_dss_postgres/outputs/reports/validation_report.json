@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-13T20:06:42.162340+00:00",
+  "generated_at": "2026-06-13T22:54:26.183614+00:00",
   "passed": true,
   "checks": [
     {
@@ -78,7 +78,7 @@
       "check_name": "fact_whatif_exists_and_has_rows",
       "severity": "error",
       "passed": true,
-      "observed_value": 402,
+      "observed_value": 2542,
       "expected_value": "> 0",
       "table_name": "fact_whatif"
     },
