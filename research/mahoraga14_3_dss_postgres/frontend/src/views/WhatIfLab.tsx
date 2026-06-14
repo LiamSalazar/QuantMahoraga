@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import type { Options, Row } from "../api/types";
 import { ChartPanel } from "../components/ChartPanel";
@@ -14,44 +14,132 @@ import { asNumber, formatMetric } from "../utils/format";
 import { OFFICIAL_CANDIDATE_ID, formatDemoMode } from "../utils/labels";
 import { rowsFrom, topRows } from "../utils/rows";
 
+type ScenarioControls = {
+  fold: string;
+  horizon: string;
+  budget: string;
+  conviction: string;
+  leader: string;
+  backoff: string;
+  cost: string;
+  slippage: string;
+};
+
 function rangeValues(options: Options | null, key: string, fallback: number[]) {
-  return (options?.slider_ranges?.[key]?.values ?? fallback).map((value) => Number(value));
+  const values = (options?.slider_ranges?.[key]?.values ?? fallback).map((value) => Number(value)).filter((value) => Number.isFinite(value));
+  return values.length ? values : fallback;
 }
 
 function complete(row: Row) {
   return asNumber(row.cagr ?? row.CAGR) !== null && asNumber(row.sharpe ?? row.Sharpe) !== null && asNumber(row.maxdd ?? row.MaxDD) !== null;
 }
 
+function sameControls(a: ScenarioControls, b: ScenarioControls) {
+  return Object.keys(a).every((key) => a[key as keyof ScenarioControls] === b[key as keyof ScenarioControls]);
+}
+
+function nearestOption(value: string, options: (string | number)[]) {
+  const valid = options.map((option) => String(option));
+  if (!valid.length) return value;
+  if (valid.includes(value)) return value;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return valid
+      .map((option) => ({ option, distance: Math.abs(Number(option) - numeric) }))
+      .filter((item) => Number.isFinite(item.distance))
+      .sort((a, b) => a.distance - b.distance)[0]?.option ?? valid[0];
+  }
+  return valid[0];
+}
+
+function scenarioDistance(row: Row, controls: ScenarioControls) {
+  const values = [
+    [row.budget_multiplier, controls.budget],
+    [row.conviction_multiplier, controls.conviction],
+    [row.leader_multiplier, controls.leader],
+    [row.backoff_strength, controls.backoff],
+  ];
+  const distances = values.map(([left, right]) => {
+    const a = asNumber(left);
+    const b = asNumber(right);
+    return a === null || b === null ? null : Math.abs(a - b);
+  });
+  if (distances.some((value) => value === null)) return null;
+  return (distances as number[]).reduce((sum, value) => sum + value, 0);
+}
+
 export default function WhatIfLab({ options }: { options: Options | null }) {
   const [tab, setTab] = useState<"observed" | "simulated">("observed");
-  const [fold, setFold] = useState("1");
-  const [horizon, setHorizon] = useState("20");
-  const [budget, setBudget] = useState("1.05");
-  const [conviction, setConviction] = useState("1.1");
-  const [leader, setLeader] = useState("1.1");
-  const [backoff, setBackoff] = useState("1.05");
-  const [cost, setCost] = useState("5");
-  const [slippage, setSlippage] = useState("2");
-  const [applied, setApplied] = useState(0);
+  const [draft, setDraft] = useState<ScenarioControls>({ fold: "1", horizon: "20", budget: "1.05", conviction: "1.1", leader: "1.1", backoff: "1.05", cost: "5", slippage: "2" });
+  const [appliedControls, setAppliedControls] = useState<ScenarioControls>(draft);
+  const [appliedNonce, setAppliedNonce] = useState(0);
   const extended = useApiResource<Record<string, unknown>>("/research/extended-summary");
-  const grid = useApiResource<Record<string, unknown>>("/whatif/grid", { candidate_id: OFFICIAL_CANDIDATE_ID, fold, universe_id: options?.default_universe ?? "base_universe_12", horizon, cost_bps: cost, slippage_bps: slippage, limit: 1000, applied }, tab === "simulated");
-  if (((grid.loading && tab === "simulated") || extended.loading) && !extended.data) return <LoadingState label="Loading what-if grid" />;
-  if (grid.error) return <ErrorState error={grid.error} retry={grid.retry} />;
-  if (extended.error) return <ErrorState error={extended.error} retry={extended.retry} />;
+  const grid = useApiResource<Record<string, unknown>>(
+    "/whatif/grid",
+    { candidate_id: OFFICIAL_CANDIDATE_ID, fold: appliedControls.fold, universe_id: options?.default_universe ?? "base_universe_12", horizon: appliedControls.horizon, cost_bps: appliedControls.cost, slippage_bps: appliedControls.slippage, limit: 1000, appliedNonce },
+    tab === "simulated",
+  );
 
+  const foldOptions = useMemo(() => ["all", ...(options?.folds ?? [1, 2, 3, 4, 5])], [options?.folds]);
+  const horizonOptions = useMemo(() => options?.horizons ?? [1, 5, 20, 60], [options?.horizons]);
+  const budgetOptions = useMemo(() => rangeValues(options, "budget_multiplier", [0.9, 0.95, 1, 1.05, 1.1, 1.15]), [options]);
+  const convictionOptions = useMemo(() => rangeValues(options, "conviction_multiplier", [0.9, 1, 1.1, 1.2, 1.3]), [options]);
+  const leaderOptions = useMemo(() => rangeValues(options, "leader_multiplier", [0.9, 1, 1.1, 1.2, 1.3]), [options]);
+  const backoffOptions = useMemo(() => rangeValues(options, "backoff_strength", [0.9, 1, 1.05, 1.1, 1.2]), [options]);
+  const costOptions = useMemo(() => rangeValues(options, "cost_bps", [0, 5, 10, 25]), [options]);
+  const slippageOptions = useMemo(() => rangeValues(options, "slippage_bps", [0, 2, 5, 10]), [options]);
   const simulated = rowsFrom(grid.data).filter(complete);
   const observed = rowsFrom(extended.data, "extended_multiplier_summary").filter((row) => row.demo_mode !== true && complete(row));
   const pareto = rowsFrom(grid.data, "pareto").filter(complete);
-  const selected = simulated
-    .map((row) => ({
-      row,
-      dist: Math.abs(Number(row.budget_multiplier) - Number(budget)) + Math.abs(Number(row.conviction_multiplier) - Number(conviction)) + Math.abs(Number(row.leader_multiplier) - Number(leader)) + Math.abs(Number(row.backoff_strength) - Number(backoff)),
-    }))
-    .sort((a, b) => a.dist - b.dist)[0];
+  const selected = useMemo(
+    () =>
+      simulated
+        .map((row) => ({ row, dist: scenarioDistance(row, appliedControls) }))
+        .filter((item): item is { row: Row; dist: number } => item.dist !== null)
+        .sort((a, b) => a.dist - b.dist)[0],
+    [simulated, appliedControls],
+  );
   const officialSharpe = asNumber(observed.find((row) => row.candidate_id === OFFICIAL_CANDIDATE_ID || row.CandidateId === OFFICIAL_CANDIDATE_ID)?.Sharpe);
   const selectedSharpe = asNumber(selected?.row.sharpe);
   const insight = selectedSharpe !== null && officialSharpe !== null ? `Selected scenario is ${selectedSharpe < officialSharpe ? "below" : "above"} the official Sharpe reference in this what-if slice.` : null;
   const activeRows = tab === "observed" ? observed : simulated;
+  const hasDraftChanges = !sameControls(draft, appliedControls);
+  const applyStatus = hasDraftChanges ? "Pending changes" : "Scenario already applied";
+
+  useEffect(() => {
+    const normalize = (current: ScenarioControls): ScenarioControls => ({
+      fold: nearestOption(current.fold, foldOptions),
+      horizon: nearestOption(current.horizon, horizonOptions),
+      budget: nearestOption(current.budget, budgetOptions),
+      conviction: nearestOption(current.conviction, convictionOptions),
+      leader: nearestOption(current.leader, leaderOptions),
+      backoff: nearestOption(current.backoff, backoffOptions),
+      cost: nearestOption(current.cost, costOptions),
+      slippage: nearestOption(current.slippage, slippageOptions),
+    });
+    setDraft((current) => {
+      const next = normalize(current);
+      return sameControls(current, next) ? current : next;
+    });
+    setAppliedControls((current) => {
+      const next = normalize(current);
+      return sameControls(current, next) ? current : next;
+    });
+  }, [foldOptions, horizonOptions, budgetOptions, convictionOptions, leaderOptions, backoffOptions, costOptions, slippageOptions]);
+
+  function updateDraft(key: keyof ScenarioControls, value: string) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function applyScenario() {
+    if (!hasDraftChanges) return;
+    setAppliedControls(draft);
+    setAppliedNonce((value) => value + 1);
+  }
+
+  if (((grid.loading && tab === "simulated") || extended.loading) && !extended.data) return <LoadingState label="Loading what-if grid" />;
+  if (grid.error) return <ErrorState error={grid.error} retry={grid.retry} />;
+  if (extended.error) return <ErrorState error={extended.error} retry={extended.retry} />;
 
   return (
     <div className="view-grid">
@@ -68,18 +156,19 @@ export default function WhatIfLab({ options }: { options: Options | null }) {
         <section className="panel span-12">
           <SectionHeader title="Simulated Scenario Builder" question="Guided discrete controls only; apply button avoids slider request storms." source="fact_whatif demo_mode=true" />
           <div className="lab-controls">
-            <SelectControl label="Fold" value={fold} options={["all", ...(options?.folds ?? [1, 2, 3, 4, 5])]} onChange={setFold} compact />
-            <SelectControl label="Horizon" value={horizon} options={options?.horizons ?? [1, 5, 20, 60]} onChange={setHorizon} compact />
-            <SelectControl label="Budget" value={budget} options={rangeValues(options, "budget_multiplier", [0.9, 0.95, 1, 1.05, 1.1, 1.15])} onChange={setBudget} compact />
-            <SelectControl label="Conviction" value={conviction} options={rangeValues(options, "conviction_multiplier", [0.9, 1, 1.1, 1.2, 1.3])} onChange={setConviction} compact />
-            <SelectControl label="Leader" value={leader} options={rangeValues(options, "leader_multiplier", [0.9, 1, 1.1, 1.2, 1.3])} onChange={setLeader} compact />
-            <SelectControl label="Backoff" value={backoff} options={rangeValues(options, "backoff_strength", [0.9, 1, 1.05, 1.1, 1.2])} onChange={setBackoff} compact />
-            <SelectControl label="Cost bps" value={cost} options={rangeValues(options, "cost_bps", [0, 5, 10, 25])} onChange={setCost} compact />
-            <SelectControl label="Slippage bps" value={slippage} options={rangeValues(options, "slippage_bps", [0, 2, 5, 10])} onChange={setSlippage} compact />
-            <button className="primary-button" onClick={() => setApplied((value) => value + 1)} disabled={!grid.data && grid.loading}>Apply scenario</button>
+            <SelectControl label="Fold" value={draft.fold} options={foldOptions} onChange={(value) => updateDraft("fold", value)} compact />
+            <SelectControl label="Horizon" value={draft.horizon} options={horizonOptions} onChange={(value) => updateDraft("horizon", value)} compact />
+            <SelectControl label="Budget" value={draft.budget} options={budgetOptions} onChange={(value) => updateDraft("budget", value)} compact />
+            <SelectControl label="Conviction" value={draft.conviction} options={convictionOptions} onChange={(value) => updateDraft("conviction", value)} compact />
+            <SelectControl label="Leader" value={draft.leader} options={leaderOptions} onChange={(value) => updateDraft("leader", value)} compact />
+            <SelectControl label="Backoff" value={draft.backoff} options={backoffOptions} onChange={(value) => updateDraft("backoff", value)} compact />
+            <SelectControl label="Cost bps" value={draft.cost} options={costOptions} onChange={(value) => updateDraft("cost", value)} compact />
+            <SelectControl label="Slippage bps" value={draft.slippage} options={slippageOptions} onChange={(value) => updateDraft("slippage", value)} compact />
+            <button className="primary-button" onClick={applyScenario} disabled={!hasDraftChanges || (!grid.data && grid.loading)}>Apply scenario</button>
+            <span>{applyStatus}</span>
           </div>
           <div className="metric-grid">
-            <MetricCard label="Nearest scenario distance" value={selected ? selected.dist.toFixed(3) : "—"} detail="selected controls to available row" />
+            <MetricCard label="Nearest scenario distance" value={selected ? selected.dist.toFixed(3) : "—"} detail={selected && selected.dist > 0 ? "nearest valid scenario shown" : "selected controls to available row"} />
             <MetricCard label="Nearest CAGR" value={formatMetric(selected?.row.cagr, "CAGR")} detail={formatDemoMode(selected?.row.demo_mode)} />
             <MetricCard label="Nearest Sharpe" value={formatMetric(selected?.row.sharpe, "Sharpe")} detail={insight ?? "ranked by robust score"} />
             <MetricCard label="Valid rows" value={String(simulated.length)} detail="current what-if slice" />

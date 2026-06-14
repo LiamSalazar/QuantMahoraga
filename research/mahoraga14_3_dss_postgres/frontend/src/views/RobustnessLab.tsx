@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import type { Options, Row } from "../api/types";
 import { ChartPanel } from "../components/ChartPanel";
@@ -23,24 +23,35 @@ export default function RobustnessLab({ options }: { options: Options | null }) 
   const extended = useApiResource<Record<string, unknown>>("/research/extended-summary");
   const surface = useApiResource<Record<string, unknown>>("/robustness/surface", { metric, universe_id: options?.default_universe ?? "base_universe_12", limit: 1200 });
   const compare = useApiResource<Record<string, unknown>>("/research/robustness-compare", { universe_id: options?.default_universe ?? "base_universe_12" });
-  if ((extended.loading || surface.loading || compare.loading) && !extended.data) return <LoadingState label="Loading robustness evidence" />;
-  if (extended.error) return <ErrorState error={extended.error} retry={extended.retry} />;
-  if (surface.error) return <ErrorState error={surface.error} retry={surface.retry} />;
-  if (compare.error) return <ErrorState error={compare.error} retry={compare.retry} />;
 
   const summary = rowsFrom(extended.data, "extended_multiplier_summary");
-  const sensitivity = rowsFrom(extended.data, "sensitivity_ranking").filter((row) => row.sensitivity_score !== null);
+  const sensitivity = rowsFrom(extended.data, "sensitivity_ranking").filter((row) => row.sensitivity_score !== null && row.sensitivity_score !== undefined);
   const plateau = rowsFrom(extended.data, "plateau_radius");
-  const points = rowsFrom(surface.data).filter((row) => row[xAxis] !== null && row[yAxis] !== null && row.metric_value !== null);
+  const points = rowsFrom(surface.data).filter((row) => row[xAxis] !== null && row[xAxis] !== undefined && row[yAxis] !== null && row[yAxis] !== undefined && row.metric_value !== null && row.metric_value !== undefined);
   const pareto = summary
     .map((row) => ({ ...row, candidate_id: row.candidate_id ?? row.CandidateId, cagr: row.CAGR, sharpe: row.Sharpe, maxdd: row.MaxDD }))
-    .filter((row) => row.cagr !== null && row.sharpe !== null && row.maxdd !== null);
+    .filter((row) => row.cagr !== null && row.cagr !== undefined && row.sharpe !== null && row.sharpe !== undefined && row.maxdd !== null && row.maxdd !== undefined);
   const compareRows = rowsFrom(compare.data);
   const usableSurface = hasHeatmap(points, xAxis, yAxis, "metric_value", 6);
+  const yAxisOptions = useMemo(() => axes.filter((axis) => axis !== xAxis), [xAxis]);
   const insight = useMemo(() => {
     const dominant = topRows(sensitivity, "sensitivity_score", 1)[0];
     return dominant ? `${String(dominant.axis).replaceAll("_", " ")} is the dominant sensitivity axis in the current sweep.` : null;
   }, [sensitivity]);
+
+  useEffect(() => {
+    if (!metricOptions.includes(metric)) setMetric(metricOptions[0]);
+  }, [metric]);
+
+  useEffect(() => {
+    if (!axes.includes(xAxis)) setXAxis(axes[0]);
+    if (xAxis === yAxis || !axes.includes(yAxis)) setYAxis(axes.find((axis) => axis !== xAxis) ?? axes[1]);
+  }, [xAxis, yAxis]);
+
+  if ((extended.loading || surface.loading || compare.loading) && !extended.data) return <LoadingState label="Loading robustness evidence" />;
+  if (extended.error) return <ErrorState error={extended.error} retry={extended.retry} />;
+  if (surface.error) return <ErrorState error={surface.error} retry={surface.retry} />;
+  if (compare.error) return <ErrorState error={compare.error} retry={compare.retry} />;
 
   return (
     <div className="view-grid">
@@ -67,7 +78,7 @@ export default function RobustnessLab({ options }: { options: Options | null }) 
         question={usableSurface ? "Does the metric form a usable plateau?" : "Sparse sweep on this pair; showing ranked sensitivity instead."}
         source="mart.mv_robustness_surface"
         ready={usableSurface || sensitivity.length >= 2}
-        action={<><SelectControl label="Metric" value={metric} options={metricOptions} onChange={setMetric} compact /><SelectControl label="X axis" value={xAxis} options={axes} onChange={setXAxis} compact /><SelectControl label="Y axis" value={yAxis} options={axes.filter((axis) => axis !== xAxis)} onChange={setYAxis} compact /></>}
+        action={<><SelectControl label="Metric" value={metric} options={metricOptions} onChange={setMetric} compact /><SelectControl label="X axis" value={xAxis} options={axes} onChange={setXAxis} compact /><SelectControl label="Y axis" value={yAxis} options={yAxisOptions} onChange={setYAxis} compact /></>}
       >
         {usableSurface ? (
           <ResponsiveContainer width="100%" height="100%"><ScatterChart><CartesianGrid stroke="#22303a" /><XAxis dataKey={xAxis} type="number" label={axisLabel(xAxis.replaceAll("_", " "))} /><YAxis dataKey={yAxis} type="number" label={axisLabel(yAxis.replaceAll("_", " "), true)} /><ZAxis dataKey="metric_value" range={[40, 280]} /><Tooltip content={<ChartTooltip />} /><Scatter data={points}>{points.map((row, index) => <Cell key={index} fill={row.candidate_id === OFFICIAL_CANDIDATE_ID || (asNumber(row[xAxis]) === 1.05 && asNumber(row[yAxis]) === 1.1) ? "#f7c76a" : "#72f0b1"} />)}</Scatter></ScatterChart></ResponsiveContainer>

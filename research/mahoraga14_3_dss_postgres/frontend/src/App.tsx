@@ -75,7 +75,7 @@ export default function App() {
         setCacheNonce((value) => value + 1);
       }}
     >
-      <ErrorBoundary>
+      <ErrorBoundary key={active}>
         <Suspense fallback={<LoadingState label="Loading view module" />}>
           <ActiveView active={active} options={stableOptions} setActive={setActive} />
         </Suspense>

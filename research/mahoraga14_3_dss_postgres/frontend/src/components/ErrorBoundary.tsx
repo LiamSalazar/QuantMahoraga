@@ -3,11 +3,17 @@ import { ErrorState } from "./States";
 
 type State = { error: string | null };
 
-export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
+export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: string }, State> {
   state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
     return { error: error.message };
+  }
+
+  componentDidUpdate(prevProps: { resetKey?: string }) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null });
+    }
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
