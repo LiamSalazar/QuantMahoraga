@@ -6,14 +6,33 @@ import { MetricCard } from "../components/MetricCard";
 import { SectionHeader } from "../components/SectionHeader";
 import { ErrorState, LoadingState } from "../components/States";
 import { useApiResource } from "../hooks/useApiResource";
+import type { Row } from "../api/types";
 import { hasSeries } from "../utils/chartGuards";
-import { formatMetric } from "../utils/format";
+import { asNumber, formatMetric, formatNumber, formatPercent } from "../utils/format";
 import { pick, rowsFrom } from "../utils/rows";
 
-function usefulRow(row: Record<string, unknown>) {
-  const values = Object.values(row);
-  const filled = values.filter((value) => value !== null && value !== undefined && value !== "").length;
-  return filled >= Math.max(2, Math.ceil(values.length * 0.35));
+function pValue(value: unknown) {
+  const n = asNumber(value);
+  if (n === null) return "";
+  return n < 0.001 ? "<0.001" : n.toFixed(3);
+}
+
+function statsRow(row: Record<string, unknown>): Row | null {
+  const benchmark = row.Benchmark ?? row.benchmark;
+  const alpha = row.alpha_ann ?? row.AlphaNW_QQQ ?? row.AlphaNW_SPY;
+  const tAlpha = row.t_alpha;
+  const pAlpha = row.p_alpha;
+  const beta = row.beta;
+  const r2 = row.r2;
+  if (!benchmark || [alpha, tAlpha, pAlpha, beta, r2].some((value) => asNumber(value) === null)) return null;
+  return {
+    benchmark: String(benchmark),
+    alpha_ann: formatPercent(alpha),
+    t_alpha: formatNumber(tAlpha, 2),
+    p_alpha: pValue(pAlpha),
+    beta: formatNumber(beta, 2),
+    r2: formatNumber(r2, 2),
+  };
 }
 
 export default function BaselineEvidence() {
@@ -29,7 +48,9 @@ export default function BaselineEvidence() {
   const costDelta = cost.map((row) => ({ ...row, delta_cagr: Number(row.CAGR ?? 0) - Number(baseCost.CAGR ?? 0), delta_sharpe: Number(row.Sharpe ?? 0) - Number(baseCost.Sharpe ?? 0) }));
   const outcomePercentiles = rowsFrom(distributions.data, "outcome_percentiles");
   const decisionPercentiles = rowsFrom(distributions.data, "decision_percentiles");
-  const statisticalRows = [...alpha, ...rowsFrom(data, "pvalue_qvalue"), ...rowsFrom(data, "return_per_exposure"), ...rowsFrom(data, "exposure_summary")].filter(usefulRow);
+  const statisticalRows = alpha.map(statsRow).filter((row): row is Row => row !== null);
+  const qqqStats = statisticalRows.find((row) => String(row.benchmark).includes("QQQ"));
+  const spyStats = statisticalRows.find((row) => String(row.benchmark).includes("SPY"));
   if ((resource.loading || distributions.loading) && !resource.data) return <LoadingState label="Loading official baseline evidence" />;
   if (resource.error) return <ErrorState error={resource.error} retry={resource.retry} />;
   if (distributions.error) return <ErrorState error={distributions.error} retry={distributions.retry} />;
@@ -44,6 +65,14 @@ export default function BaselineEvidence() {
           ))}
         </div>
       </section>
+      {qqqStats && spyStats ? (
+        <section className="panel span-12">
+          <div className="insight-card">
+            <b>Statistical edge</b>
+            <span>Official Mahoraga shows positive Newey-West alpha vs QQQ and SPY, with beta near {String(qqqStats.beta)} vs QQQ and {String(spyStats.beta)} vs SPY.</span>
+          </div>
+        </section>
+      ) : null}
       <section className="panel span-12">
         <SectionHeader title="Stitched Comparison Table" question="Official vs QQQ, SPY and 14.1 control." source="stitched_comparison_official.csv" />
         <DataTable rows={stitched} columns={["Variant", "GateRole", "CandidateId", "CAGR", "Sharpe", "Sortino", "MaxDD", "BetaQQQ", "BetaSPY", "AlphaNW_QQQ", "AlphaNW_SPY", "AvgExposure"]} />
@@ -99,7 +128,7 @@ export default function BaselineEvidence() {
       </ChartPanel>
       <section className="panel span-12">
         <SectionHeader title="Statistical and Operating Evidence" question="Newey-West alpha, p/q values, exposure, turnover and return per exposure." source="official outputs + audit CSVs" />
-        <DataTable rows={statisticalRows} pageSize={10} />
+        <DataTable rows={statisticalRows} columns={["benchmark", "alpha_ann", "t_alpha", "p_alpha", "beta", "r2"]} pageSize={10} />
       </section>
       <section className="panel span-12">
         <SectionHeader title="Distribution Percentile Table" question="Postgres aggregations over outcome and decision-state facts." source="dw.fact_outcome + dw.fact_decision_state" />

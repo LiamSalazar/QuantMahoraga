@@ -39,7 +39,12 @@ function bestWorst(rows: Row[], key: string) {
   return { best: topRows(rows, key, 1)[0], worst: topRows(rows, key, 1, false)[0] };
 }
 
-export default function CommandCenter({ options, onOpenView }: { options: Options | null; onOpenView: (view: ViewKey) => void }) {
+function pp(value: number) {
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${(value * 100).toFixed(1)} pp`;
+}
+
+export default function CommandCenter({ options }: { options: Options | null; onOpenView: (view: ViewKey) => void }) {
   const resource = useApiResource<Record<string, unknown>>("/research/command-center", {
     candidate_id: options?.default_candidate ?? OFFICIAL_CANDIDATE_ID,
     universe_id: options?.default_universe ?? "base_universe_12",
@@ -63,6 +68,36 @@ export default function CommandCenter({ options, onOpenView }: { options: Option
   const regimeBW = bestWorst(rowsFrom(winsDrags, "regimes"), "avg_net_return");
   const candidateBW = bestWorst(rowsFrom(winsDrags, "candidates"), "sharpe");
   const qqq = comparison.find((row) => String(row.Variant).includes("QQQ"));
+  const spy = comparison.find((row) => String(row.Variant).includes("SPY"));
+  const sensitivity = rowsFrom(data, "sensitivity_ranking");
+  const dominantSensitivity = topRows(sensitivity, "sensitivity_score", 1)[0];
+  const logicalRows = (health.logical_counts as Row | undefined)?.total_rows;
+  const marts = Array.isArray(health.marts_available) ? health.marts_available.length : undefined;
+  const benchmarkEdge = (() => {
+    const officialCagr = asNumber(pick(official, ["cagr", "CAGR"]));
+    const officialMaxdd = asNumber(pick(official, ["maxdd", "MaxDD"]));
+    const qqqCagr = asNumber(pick(qqq, ["CAGR", "cagr"]));
+    const qqqMaxdd = asNumber(pick(qqq, ["MaxDD", "maxdd"]));
+    if (officialCagr === null || officialMaxdd === null || qqqCagr === null || qqqMaxdd === null) return null;
+    return `Official improves CAGR over QQQ by ${pp(officialCagr - qqqCagr)} and changes MaxDD by ${pp(officialMaxdd - qqqMaxdd)}.`;
+  })();
+  const robustnessPosition = (() => {
+    const best = candidateBW.best;
+    const worst = candidateBW.worst;
+    const officialSharpe = asNumber(pick(official, ["sharpe", "Sharpe"]));
+    const bestSharpe = asNumber(best?.sharpe);
+    const worstSharpe = asNumber(worst?.sharpe);
+    if (officialSharpe === null || bestSharpe === null || worstSharpe === null) return null;
+    return `Official Sharpe is ${formatNumber(officialSharpe, 3)} vs best observed ${formatNumber(bestSharpe, 3)} and weakest observed ${formatNumber(worstSharpe, 3)}.`;
+  })();
+  const summaryCards = [
+    benchmarkEdge ? { title: "Benchmark edge", detail: benchmarkEdge } : null,
+    robustnessPosition ? { title: "Robustness position", detail: robustnessPosition } : null,
+    dominantSensitivity ? { title: "Main sensitivity driver", detail: `${String(dominantSensitivity.axis).replaceAll("_", " ")} dominates with score ${formatNumber(dominantSensitivity.sensitivity_score, 2)}.` } : null,
+    tickerBW.best && tickerBW.worst ? { title: "Contribution snapshot", detail: `Top contributor: ${String(tickerBW.best.ticker)}; largest drag: ${String(tickerBW.worst.ticker)}.` } : null,
+    logicalRows ? { title: "Data engine status", detail: `${formatNumber(logicalRows, 0)} logical rows · ${String(health.backend ?? "Postgres")} · ${formatNumber(marts, 0)} marts/views · query logs ${health.query_logs_active ? "active" : "warming"}.` } : null,
+    spy && asNumber(pick(spy, ["CAGR", "cagr"])) !== null ? { title: "Secondary benchmark", detail: `SPY comparison is materialized with CAGR ${formatMetric(pick(spy, ["CAGR", "cagr"]), "CAGR")}.` } : null,
+  ].filter((item): item is { title: string; detail: string } => Boolean(item));
   const insights = [
     asNumber(pick(official, ["cagr", "CAGR"])) !== null && asNumber(pick(qqq, ["CAGR"])) !== null && Number(pick(official, ["cagr", "CAGR"])) > Number(pick(qqq, ["CAGR"]))
       ? "Official Mahoraga improves CAGR over QQQ in the stitched comparison."
@@ -70,14 +105,6 @@ export default function CommandCenter({ options, onOpenView }: { options: Option
     tickerBW.best ? `Top positive ticker in this slice is ${tickerBW.best.ticker}.` : null,
     moduleBW.best ? `${moduleBW.best.module_name} has the strongest helped-rate evidence by horizon.` : null,
   ].filter(Boolean);
-
-  const highlights: Array<{ title: string; detail: string; view: ViewKey }> = [
-    { title: "Compare official vs best/worst observed", detail: "Audit why the frozen baseline is not automatically replaced by a higher-scoring sweep point.", view: "robustness" },
-    { title: "Audit a rich decision", detail: "Open a decision with positions, module trace and outcomes already materialized.", view: "replay" },
-    { title: "Inspect module contribution", detail: "See helped rate, activation and horizon effects by overlay module.", view: "modules" },
-    { title: "Explore mining questions", detail: "Run guided OLAP presets with tables, charts and drill-through actions.", view: "olap" },
-    { title: "Check data evidence", detail: "Review row origin, query logs, marts and execution evidence.", view: "engineering" },
-  ];
 
   return (
     <div className="view-grid">
@@ -161,18 +188,19 @@ export default function CommandCenter({ options, onOpenView }: { options: Option
         <DataTable rows={comparison} columns={["Variant", "GateRole", "CAGR", "Sharpe", "Sortino", "MaxDD", "AlphaNW_QQQ", "AlphaNW_SPY", "AvgExposure"]} />
       </section>
 
-      <section className="panel span-12">
-        <SectionHeader title="Research Workbench Highlights" question="Fast paths into auditable research workflows." source="DSS navigation" />
-        <div className="workbench-grid">
-          {highlights.map((item) => (
-            <article className="workbench-card" key={item.title}>
-              <b>{item.title}</b>
-              <span>{item.detail}</span>
-              <button className="ghost-button" onClick={() => onOpenView(item.view)}>Open</button>
-            </article>
-          ))}
-        </div>
-      </section>
+      {summaryCards.length ? (
+        <section className="panel span-12">
+          <SectionHeader title="Research Summary" question="Quantitative conclusions from the current audited evidence." source="Command Center aggregates" />
+          <div className="workbench-grid">
+            {summaryCards.map((item) => (
+              <article className="workbench-card" key={item.title}>
+                <b>{item.title}</b>
+                <span>{item.detail}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {!comparison.length ? <EmptyState /> : null}
     </div>

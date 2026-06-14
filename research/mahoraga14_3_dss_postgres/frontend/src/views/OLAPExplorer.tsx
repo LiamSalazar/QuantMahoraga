@@ -18,12 +18,14 @@ const presets = [
   ["fold-best-performance", "Which fold contributes most to official performance?", "performance", "robustness"],
   ["fold-worst-drawdown", "Which fold carries the worst drawdown?", "performance", "baseline"],
   ["sharpe-stable-folds", "Is Sharpe stable across folds?", "performance", "baseline"],
+  ["performance-extreme-outcomes", "Does performance depend on a small number of extreme outcomes?", "performance", "baseline"],
   ["candidate-cagr-maxdd", "Which candidate has the best CAGR/MaxDD tradeoff?", "robustness", "robustness"],
   ["candidate-best-sharpe", "Which candidate has the best Sharpe?", "robustness", "robustness"],
   ["candidate-severe-fold-damage", "Which candidate has severe fold damage?", "robustness", "robustness"],
   ["axis-degrades-most", "Which multiplier axis degrades the model most?", "robustness", "robustness"],
   ["module-helps-horizon", "Which module helps most by horizon?", "modules", "modules"],
   ["module-active-low-value", "Which module activates often but adds little?", "modules", "modules"],
+  ["module-better-outcomes", "Which module coincides with better outcomes?", "modules", "modules"],
   ["ticker-top-contribution", "Which tickers contribute most?", "tickers", "tickers"],
   ["ticker-largest-drags", "Which tickers drag most?", "tickers", "tickers"],
   ["ticker-selection-low-contribution", "Which tickers are frequently selected but low contribution?", "tickers", "tickers"],
@@ -36,6 +38,7 @@ const presets = [
   ["decision-worst-20d", "Worst decisions by 20d outcome.", "decisions", "replay"],
   ["decision-high-exposure-bad", "High exposure with bad outcome.", "decisions", "replay"],
   ["decision-backoff-positive", "Backoff decisions with positive outcome.", "decisions", "replay"],
+  ["decision-backoff-missed-upside", "Backoff decisions with missed upside.", "decisions", "replay"],
   ["outcome-percentiles-horizon", "Outcome percentiles by horizon.", "distributions", "baseline"],
   ["exposure-buckets-outcome", "Exposure buckets vs outcome.", "distributions", "baseline"],
   ["turnover-buckets-outcome", "Turnover buckets vs outcome.", "distributions", "baseline"],
@@ -43,6 +46,7 @@ const presets = [
   ["engineering-slowest-endpoint", "Which endpoint is slowest?", "data engineering", "engineering"],
   ["engineering-highest-p95", "Which endpoint has highest p95?", "data engineering", "engineering"],
   ["engineering-source-most-used", "Which source relation is used most?", "data engineering", "engineering"],
+  ["engineering-useful-mart", "Which mart supports most DSS views?", "data engineering", "engineering"],
 ] as const;
 
 function initialPreset() {

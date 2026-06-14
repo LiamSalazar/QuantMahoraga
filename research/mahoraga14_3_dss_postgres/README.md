@@ -86,6 +86,9 @@ With `DSS_BACKEND=postgres`, these endpoints are validated:
 - `/research/baseline-evidence`
 - `/research/extended-summary`
 - `/research/best-official-worst`
+- `/research/distributions`
+- `/research/cohorts`
+- `/research/whatif-reference`
 - `/overview`
 - `/scorecard`
 - `/robustness/surface`
@@ -106,16 +109,18 @@ With `DSS_BACKEND=postgres`, these endpoints are validated:
 
 The React frontend is organized as a lazy-loaded Mahoraga Quant Research Command Center. Startup loads only `/data/health-summary`, cached `/metadata/options`, and the active Command Center research aggregate. Other views query their data only when opened.
 
-- `Command Center`: answers what Mahoraga is, what the official frozen baseline is, and what evidence supports it. Uses `/research/command-center`, `mart.mv_scorecard_candidate`, `mart.mv_drawdown_replay`, official baseline CSVs, and extended robustness outputs.
-- `Baseline Evidence`: formal baseline evidence from `stitched_comparison_official.csv`, fold summary, Newey-West alpha, p/q values, cost/slippage sensitivity, exposure, turnover, and return per exposure.
-- `Robustness Lab`: observed multiplier robustness, sensitivity tornado, Pareto trade-off, plateau radius, and worst-fold damage from `fact_robustness_surface` and extended multiplier audit CSVs.
-- `What-if & Stress`: separates observed/audited scenarios from `demo_mode=true` simulated what-if rows. Sliders use an explicit Apply action and simulated rows are labeled `Simulated what-if · not official performance`.
+- `Command Center`: answers what Mahoraga is, what the official frozen baseline is, and what evidence supports it. Uses `/research/command-center`, `mart.mv_scorecard_candidate`, `mart.mv_drawdown_replay`, official baseline CSVs, extended robustness outputs, and a non-navigational Research Summary.
+- `Baseline Evidence`: formal baseline evidence from `stitched_comparison_official.csv`, fold summary, Newey-West alpha, cost/slippage delta, and Postgres outcome/decision percentiles from `/research/distributions`.
+- `Robustness Lab`: observed multiplier robustness, sensitivity tornado, Pareto trade-off, 1D fallback curves for sparse surfaces, plateau radius, and worst-fold damage from `fact_robustness_surface` and extended multiplier audit CSVs.
+- `What-if & Stress`: separates observed/audited scenarios from `demo_mode=true` simulated what-if rows. Draft controls preview nearest valid scenarios, Apply confirms an applied scenario, and `/research/whatif-reference` supplies official/best references.
 - `Decision Replay`: reconstructs date-level decisions from `fact_decision_state`, `fact_position_daily`, `fact_module_trace`, `fact_outcome`, and market bars.
-- `Module Attribution`: activation/helped/alpha diagnostics by module and horizon from `mart.mv_module_effectiveness`.
-- `Ticker Contribution`: contribution, selection, leadership, concentration, and average weight from `mart.mv_ticker_contribution`.
-- `Regime Analysis`: return, benchmark, exposure, drawdown, backoff, continuation, and leader blend by regime from `mart.mv_regime_behavior`.
-- `OLAP Explorer`: guided presets for slice, dice, roll-up, drill-down, and pivot-style operations through `/slice`; it does not expose free-text filters.
-- `Data Engineering`: active backend, latest run, row origin counts, marts, validation status, and query performance from `/data/health-summary` and `/query/performance`.
+- `Module Attribution`: activation/helped/alpha diagnostics by module and horizon from `mart.mv_module_effectiveness`, rendered as a module x horizon matrix when useful.
+- `Ticker Contribution`: contribution, selection, leadership, concentration, and average weight from `mart.mv_ticker_contribution`; fold-all views are aggregated to one row per ticker.
+- `Regime Analysis`: return, benchmark, exposure, drawdown, backoff, continuation, and leader blend by regime from `mart.mv_regime_behavior`; fold-all views are aggregated to one row per regime.
+- `OLAP Explorer`: Mining Questions Workbench with guided presets for slice, dice, roll-up, drill-down, pivot and drill-through operations, including distribution/cohort questions from `/research/distributions` and `/research/cohorts`.
+- `Data Engineering`: active backend, latest run, row origin counts, layer row totals, marts, validation status, source usage, optimization targets, and query performance from `/data/health-summary` and `/data/execution-evidence`.
+
+Replay lookup indexes in `sql/006_create_indexes.sql` cover `(candidate_id, universe_id, fold, date_value, ticker)` for positions and equivalent replay lookups for module trace/outcomes. These are idempotent `CREATE INDEX IF NOT EXISTS` statements and do not alter official results.
 
 Candidate labels are presentation-safe:
 

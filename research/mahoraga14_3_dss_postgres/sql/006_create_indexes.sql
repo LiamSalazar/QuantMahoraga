@@ -13,8 +13,17 @@ CREATE INDEX IF NOT EXISTS idx_fact_position_asset_date
 CREATE INDEX IF NOT EXISTS idx_fact_position_candidate_fold_date
     ON dw.fact_position_daily (candidate_id, fold, date_value);
 
+CREATE INDEX IF NOT EXISTS idx_fact_position_replay_lookup
+    ON dw.fact_position_daily (candidate_id, universe_id, fold, date_value, ticker);
+
 CREATE INDEX IF NOT EXISTS idx_fact_module_candidate_fold_date
     ON dw.fact_module_trace (module_name, candidate_id, fold, date_value);
+
+CREATE INDEX IF NOT EXISTS idx_fact_module_replay_lookup
+    ON dw.fact_module_trace (candidate_id, universe_id, fold, date_value);
+
+CREATE INDEX IF NOT EXISTS idx_fact_outcome_replay_lookup
+    ON dw.fact_outcome (candidate_id, universe_id, fold, decision_date, horizon);
 
 CREATE INDEX IF NOT EXISTS idx_fact_decision_regime_candidate_fold
     ON dw.fact_decision_state (regime, candidate_id, fold);

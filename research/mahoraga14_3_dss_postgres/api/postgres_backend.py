@@ -420,13 +420,24 @@ class PostgresBackend:
             WITH candidates AS (
                 SELECT
                     d.*,
+                    o.horizon,
+                    o.realized_return,
+                    o.alpha_vs_qqq,
+                    o.alpha_vs_spy,
+                    o.helped_flag,
                     (SELECT count(*) FROM dw.fact_position_daily p
                      WHERE p.candidate_id = d.candidate_id AND p.fold = d.fold AND p.universe_id = d.universe_id AND p.date_value = d.date_value) AS position_count,
                     (SELECT count(*) FROM dw.fact_module_trace m
                      WHERE m.candidate_id = d.candidate_id AND m.fold = d.fold AND m.universe_id = d.universe_id AND m.date_value = d.date_value) AS module_count,
                     (SELECT count(*) FROM dw.fact_outcome o
                      WHERE o.candidate_id = d.candidate_id AND o.fold = d.fold AND o.universe_id = d.universe_id AND o.decision_date = d.date_value) AS outcome_count
-                FROM mart.mv_decision_replay d
+                FROM dw.fact_decision_state d
+                LEFT JOIN dw.fact_outcome o
+                  ON o.candidate_id = d.candidate_id
+                 AND o.fold = d.fold
+                 AND o.universe_id = d.universe_id
+                 AND o.decision_date = d.date_value
+                 AND o.horizon = 20
                 WHERE d.candidate_id = %(candidate_id)s
                   AND (%(fold)s::int IS NULL OR d.fold = %(fold)s::int)
                   AND d.universe_id = %(universe_id)s
@@ -594,12 +605,14 @@ class PostgresBackend:
             "fold-best-performance": ("Which fold contributes most to official performance?", "roll-up", "mart.mv_performance_by_fold", "avg_alpha_vs_qqq", "fold"),
             "fold-worst-drawdown": ("Which fold carries the worst drawdown?", "slice", "mart.mv_performance_by_fold", "avg_realized_return", "fold"),
             "sharpe-stable-folds": ("Is Sharpe stable across folds?", "roll-up", "mart.mv_performance_by_fold", "helped_rate", "fold"),
+            "performance-extreme-outcomes": ("Does performance depend on a small number of extreme outcomes?", "roll-up", "research.distributions", "p95_outcome", "horizon"),
             "candidate-cagr-maxdd": ("Which candidate has the best CAGR/MaxDD tradeoff?", "pivot", "mart.mv_scorecard_candidate", "return_per_exposure", "candidate_id"),
             "candidate-best-sharpe": ("Which candidate has the best Sharpe?", "roll-up", "mart.mv_scorecard_candidate", "sharpe", "candidate_id"),
             "candidate-severe-fold-damage": ("Which candidate has severe fold damage?", "dice", "mart.mv_scorecard_candidate", "maxdd", "candidate_id"),
             "axis-degrades-most": ("Which multiplier axis degrades the model most?", "roll-up", "mart.mv_robustness_surface", "metric_value", "sweep_role"),
             "module-helps-horizon": ("Which module helps most by horizon?", "pivot", "mart.mv_module_effectiveness", "helped_rate", "module_name"),
             "module-active-low-value": ("Which module activates often but adds little?", "dice", "mart.mv_module_effectiveness", "activation_rate", "module_name"),
+            "module-better-outcomes": ("Which module coincides with better outcomes?", "roll-up", "mart.mv_module_effectiveness", "avg_alpha_vs_qqq", "module_name"),
             "ticker-top-contribution": ("Which tickers contribute most?", "drill-down", "mart.mv_ticker_contribution", "total_pnl_contribution", "ticker"),
             "ticker-largest-drags": ("Which tickers drag most?", "drill-down", "mart.mv_ticker_contribution", "total_pnl_contribution", "ticker"),
             "ticker-selection-low-contribution": ("Which tickers are frequently selected but low contribution?", "dice", "mart.mv_ticker_contribution", "selection_rate", "ticker"),
@@ -612,6 +625,7 @@ class PostgresBackend:
             "decision-worst-20d": ("Worst decisions by 20d outcome.", "drill-through", "mart.mv_decision_outcome", "realized_return", "date_value"),
             "decision-high-exposure-bad": ("High exposure with bad outcome.", "dice", "mart.mv_decision_outcome", "expected_exposure", "date_value"),
             "decision-backoff-positive": ("Backoff decisions with positive outcome.", "slice", "mart.mv_decision_outcome", "realized_return", "date_value"),
+            "decision-backoff-missed-upside": ("Backoff decisions with missed upside.", "slice", "mart.mv_decision_outcome", "alpha_vs_qqq", "date_value"),
             "outcome-percentiles-horizon": ("Outcome percentiles by horizon.", "roll-up", "research.distributions", "median_outcome", "horizon"),
             "exposure-buckets-outcome": ("Exposure buckets vs outcome.", "dice", "research.distributions", "median_outcome", "bucket"),
             "turnover-buckets-outcome": ("Turnover buckets vs outcome.", "dice", "research.cohorts", "median_outcome", "cohort"),
@@ -619,6 +633,7 @@ class PostgresBackend:
             "engineering-slowest-endpoint": ("Which endpoint is slowest?", "roll-up", "oltp.dss_query_log", "avg_elapsed_ms", "endpoint"),
             "engineering-highest-p95": ("Which endpoint has highest p95?", "roll-up", "oltp.dss_query_log", "p95_elapsed_ms", "endpoint"),
             "engineering-source-most-used": ("Which source relation is used most?", "roll-up", "oltp.dss_query_log", "query_count", "source_relation"),
+            "engineering-useful-mart": ("Which mart supports most DSS views?", "roll-up", "oltp.dss_query_log", "query_count", "source_relation"),
         }
         question, operation, source, measure, dimension = presets.get(preset_id, presets["fold-best-performance"])
         params = {"candidate_id": candidate_id, "universe_id": universe_id, "fold": fold, "limit": limit}
@@ -685,9 +700,10 @@ class PostgresBackend:
                 WHERE candidate_id=%(candidate_id)s AND universe_id=%(universe_id)s AND horizon=20
                   AND (%(fold)s::int IS NULL OR fold=%(fold)s::int)
                   AND (
-                    %(preset_id)s NOT IN ('decision-high-exposure-bad', 'decision-backoff-positive')
+                    %(preset_id)s NOT IN ('decision-high-exposure-bad', 'decision-backoff-positive', 'decision-backoff-missed-upside')
                     OR (%(preset_id)s = 'decision-high-exposure-bad' AND expected_exposure >= 0.80 AND realized_return < 0)
                     OR (%(preset_id)s = 'decision-backoff-positive' AND participation_state ILIKE '%%BACKOFF%%' AND realized_return > 0)
+                    OR (%(preset_id)s = 'decision-backoff-missed-upside' AND participation_state ILIKE '%%BACKOFF%%' AND alpha_vs_qqq < 0)
                   )
             """,
             "oltp.dss_query_log": """
