@@ -119,6 +119,40 @@ npm install
 VITE_API_BASE="http://127.0.0.1:8002" npm run dev
 ```
 
+Build check:
+
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres/frontend
+npm run build
+```
+
+Vite 7 requires Node `20.19+` or `22.12+`. Use `nvm use 20` or `nvm use 22` if an older Node is active.
+
+## Frontend Research UX Checks
+
+Open `http://127.0.0.1:5174` with `VITE_API_BASE="http://127.0.0.1:8002"` and verify:
+
+- `Command Center`: shows `Official Baseline — Mahoraga 14.3R ROBUST_MAIN`, secondary candidate ID `B1.05_C1.10_L1.10_R1.05`, backend, real rows, simulated what-if rows, marts, query-log status, metrics, best/official/worst observed candidates, benchmark comparison, and research-question cards.
+- `Baseline Evidence`: shows stitched comparison, Newey-West alpha/beta, fold summary, p/q values, and cost/slippage sensitivity from official baseline outputs.
+- `Robustness Lab`: shows official marker context, sensitivity ranking, Pareto trade-off, plateau radius, candidate ranking, and worst-fold damage from extended robustness outputs.
+- `What-if & Stress`: observed/audited scenarios are separate from `demo_mode=true` simulated what-if rows; sliders use `Apply scenario`.
+- `Decision Replay`: shows date/fold/candidate/regime/exposure state, weights, modules, outcomes, and a professional timeline empty state when a timeline is not materialized.
+- `Module Attribution`: shows activation/helped/outcome evidence by module and horizon.
+- `Ticker Contribution`: shows positive/negative contribution, selection rate, leader flag rate, average weight, and concentration.
+- `Regime Analysis`: shows return, benchmark, exposure, drawdown, backoff, continuation, and leader blend by regime.
+- `OLAP Explorer`: uses guided presets for slice/dice/roll-up/drill-down/pivot operations; no free-text filters are required.
+- `Data Engineering`: shows active backend, latest run, OLTP/DW/mart row counts, real/simulated rows, validation status, available marts, and query performance.
+
+Useful endpoint smoke checks:
+
+```bash
+curl -sS http://127.0.0.1:8002/data/health-summary | python -m json.tool | head
+curl -sS http://127.0.0.1:8002/research/command-center | python -m json.tool | head
+curl -sS http://127.0.0.1:8002/research/baseline-evidence | python -m json.tool | head
+curl -sS http://127.0.0.1:8002/research/extended-summary | python -m json.tool | head
+curl -sS http://127.0.0.1:8002/research/best-official-worst | python -m json.tool | head
+```
+
 ## Windows Without Postgres
 
 ```powershell
@@ -140,6 +174,8 @@ uvicorn api.main:app --host 127.0.0.1 --port 8002
 - `real_row_target_met`: true only when real artifact-derived rows meet the target.
 
 The current `standard` profile produces about 494k real rows. It does not meet the 4M real-row target with the artifacts currently available.
+
+In the frontend, this is displayed as audited Postgres/parquet artifacts plus flagged simulated what-if rows. Do not present `demo_mode=true` as a global system label. Only what-if rows and explicitly flagged scenario rows are simulated.
 
 ## Git LFS Pointers
 

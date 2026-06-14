@@ -7,6 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .db import create_backend
 from .query_registry import registry
+from .research_artifacts import (
+    OFFICIAL_CANDIDATE_ID,
+    OFFICIAL_UNIVERSE_ID,
+    baseline_evidence,
+    best_official_worst_from_extended,
+    extended_summary,
+    pipeline_summary,
+)
 from .schemas import HealthResponse
 from .settings import load_settings
 
@@ -67,6 +75,51 @@ def health() -> dict:
     }
 
 
+@app.get("/data/health-summary")
+def health_summary() -> dict:
+    counts = backend.row_counts()
+    summary = pipeline_summary()
+    query_perf = backend.query_performance() if hasattr(backend, "query_performance") else {"count": 0, "rows": []}
+    mart_rows = sum(count for table, count in counts.items() if str(table).startswith("mart.") or str(table).startswith("mv_"))
+    dw_rows = sum(count for table, count in counts.items() if str(table).startswith("dw.") or str(table).startswith("fact_") or str(table).startswith("dim_"))
+    oltp_rows = sum(count for table, count in counts.items() if str(table).startswith("oltp.") or table in {"research_run", "data_snapshot", "artifact_inventory", "candidate_grid"})
+    total_rows = int(summary.get("total_rows_written") or sum(counts.values()))
+    real_rows = int(summary.get("real_rows_written_estimate") or max(0, total_rows - int(summary.get("demo_rows_written") or 0)))
+    simulated_rows = int(summary.get("demo_rows_written") or 0)
+    return {
+        "ok": True,
+        "backend": backend.backend_name,
+        "profile": settings.profile,
+        "row_counts": counts,
+        "logical_counts": {"oltp_rows": oltp_rows, "dw_rows": dw_rows, "mart_rows": mart_rows, "total_rows": total_rows},
+        "real_rows": real_rows,
+        "simulated_rows": simulated_rows,
+        "contains_simulated_whatif": simulated_rows > 0 or bool(backend.demo_mode()),
+        "validation_passed": summary.get("validation_passed"),
+        "latest_run_id": summary.get("run_id") or summary.get("latest_run_id"),
+        "query_logs_active": query_perf.get("count", 0) > 0,
+        "query_log_count": query_perf.get("count", 0),
+        "marts_available": sorted([table for table in counts if str(table).startswith("mart.") or str(table).startswith("mv_")]),
+        "row_origin_note": "Postgres/parquet audited artifacts plus flagged simulated what-if rows.",
+    }
+
+
+@app.get("/labels/candidates")
+def labels_candidates() -> dict:
+    candidates = _options().get("candidates", [])
+    rows = []
+    for candidate_id in candidates:
+        role = "Official baseline" if candidate_id == OFFICIAL_CANDIDATE_ID else "Observed/audited scenario"
+        if str(candidate_id).startswith("EXTREME_pro-risk"):
+            role = "Extreme: pro-risk"
+        elif str(candidate_id).startswith("EXTREME_pro-defense"):
+            role = "Extreme: pro-defense"
+        elif str(candidate_id).startswith("EXTREME"):
+            role = "Extreme stress case"
+        rows.append({"candidate_id": candidate_id, "role": role, "is_official": candidate_id == OFFICIAL_CANDIDATE_ID})
+    return {"official_candidate_id": OFFICIAL_CANDIDATE_ID, "default_universe_id": OFFICIAL_UNIVERSE_ID, "rows": rows}
+
+
 @app.get("/metadata/options")
 def metadata_options() -> dict:
     return _timed("/metadata/options", "dimensions", backend.options)
@@ -75,6 +128,63 @@ def metadata_options() -> dict:
 @app.get("/metadata/questions")
 def metadata_questions() -> dict:
     return registry()
+
+
+@app.get("/research/baseline-evidence")
+def research_baseline_evidence() -> dict:
+    return baseline_evidence()
+
+
+@app.get("/research/extended-summary")
+def research_extended_summary() -> dict:
+    return extended_summary()
+
+
+@app.get("/research/best-official-worst")
+def research_best_official_worst(universe_id: str | None = OFFICIAL_UNIVERSE_ID) -> dict:
+    _validate(universe_id, "universes", "universe")
+    packaged = best_official_worst_from_extended()
+    if packaged.get("rows"):
+        return packaged
+    rows = backend.scorecard(None, universe_id, 500).get("rows", [])
+    official = next((row for row in rows if row.get("candidate_id") == OFFICIAL_CANDIDATE_ID), None)
+    scored = [row for row in rows if row.get("sharpe") is not None]
+    best = max(scored, key=lambda row: float(row.get("sharpe") or -999999), default=None)
+    worst = min(scored, key=lambda row: float(row.get("sharpe") or 999999), default=None)
+    return {"best": best, "official": official, "worst": worst, "rows": [row for row in [best, official, worst] if row]}
+
+
+@app.get("/research/command-center")
+def research_command_center(
+    candidate_id: str = OFFICIAL_CANDIDATE_ID,
+    universe_id: str = OFFICIAL_UNIVERSE_ID,
+    fold: int | None = None,
+) -> dict:
+    _validate(candidate_id, "candidates", "candidate")
+    _validate(universe_id, "universes", "universe")
+    if fold is not None:
+        _validate(fold, "folds", "fold")
+    evidence = baseline_evidence()
+    extended = extended_summary()
+    overview_payload = backend.overview(candidate_id, fold, universe_id, "QQQ", None, None)
+    return {
+        "identity": {
+            "official_candidate_id": OFFICIAL_CANDIDATE_ID,
+            "official_universe_id": OFFICIAL_UNIVERSE_ID,
+            "status": "Frozen · promoted · audited",
+            "backend": backend.backend_name,
+            "data_badge": f"{backend.backend_name.title()} · audited artifacts + flagged simulated what-if",
+        },
+        "health": health_summary(),
+        "overview": overview_payload,
+        "baseline_comparison": evidence.get("stitched_comparison", []),
+        "best_official_worst": best_official_worst_from_extended(),
+        "research_questions": registry().get("questions", []),
+        "sensitivity_ranking": extended.get("sensitivity_ranking", []),
+        "plateau_radius": extended.get("plateau_radius", []),
+        "universe_robustness": extended.get("universe_robustness", []),
+        "sources": ["mart.mv_scorecard_candidate", "mart.mv_drawdown_replay", "baseline official outputs", "extended analysis outputs"],
+    }
 
 
 @app.get("/overview")
@@ -155,7 +265,7 @@ def decision_replay(
     return _timed("/decision/replay", "fact_decision_state+fact_position_daily+fact_module_trace+fact_outcome", lambda: backend.decision_replay(candidate_id, fold, universe_id, date, ticker))
 
 
-ALLOWED_DIMS = {"candidate_id", "fold", "universe_id", "ticker", "module_name", "regime", "horizon", "date_value", "decision_date"}
+ALLOWED_DIMS = {"candidate_id", "fold", "universe_id", "ticker", "module_name", "regime", "participation_state", "horizon", "date_value", "decision_date"}
 ALLOWED_MEASURES = {"return", "alpha", "drawdown", "exposure", "turnover", "helped_rate"}
 ALLOWED_OPS = {"slice", "dice", "roll-up", "drill-down", "pivot"}
 
