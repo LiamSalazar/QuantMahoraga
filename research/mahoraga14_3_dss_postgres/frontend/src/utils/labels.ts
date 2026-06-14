@@ -13,7 +13,7 @@ function parseCandidate(candidateId: string): Record<string, string> | null {
 }
 
 export function formatCandidateLabel(candidateId?: unknown): string {
-  if (typeof candidateId !== "string" || !candidateId) return "n/a";
+  if (typeof candidateId !== "string" || !candidateId) return "—";
   if (isOfficialCandidate(candidateId)) return OFFICIAL_LABEL;
   if (candidateId === "EXTREME_pro-risk") return "Extreme: pro-risk";
   if (candidateId === "EXTREME_pro-defense") return "Extreme: pro-defense";
@@ -26,7 +26,7 @@ export function formatCandidateLabel(candidateId?: unknown): string {
 
 export function formatUniverseLabel(universeId?: unknown): string {
   if (universeId === "base_universe_12") return "base_universe_12 · official 12-name technology universe";
-  return typeof universeId === "string" ? universeId.replaceAll("_", " ") : "n/a";
+  return typeof universeId === "string" ? universeId.replaceAll("_", " ") : "—";
 }
 
 export function formatDemoMode(value?: unknown): string {

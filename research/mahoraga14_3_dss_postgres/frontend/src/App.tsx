@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { clearApiCache } from "./api/client";
 import type { HealthSummary, Options, ViewKey } from "./api/types";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -17,7 +17,7 @@ const RegimeAnalysis = lazy(() => import("./views/RegimeAnalysis"));
 const OLAPExplorer = lazy(() => import("./views/OLAPExplorer"));
 const DataEngineering = lazy(() => import("./views/DataEngineering"));
 
-function ActiveView({ active, options }: { active: ViewKey; options: Options | null }) {
+function ActiveView({ active, options, setActive }: { active: ViewKey; options: Options | null; setActive: (view: ViewKey) => void }) {
   const props = { options };
   switch (active) {
     case "baseline":
@@ -31,25 +31,38 @@ function ActiveView({ active, options }: { active: ViewKey; options: Options | n
     case "modules":
       return <ModuleAttribution options={options} />;
     case "tickers":
-      return <TickerContribution options={options} />;
+      return <TickerContribution options={options} onOpenView={setActive} />;
     case "regimes":
       return <RegimeAnalysis options={options} />;
     case "olap":
-      return <OLAPExplorer options={options} />;
+      return <OLAPExplorer options={options} onOpenView={setActive} />;
     case "engineering":
       return <DataEngineering />;
     case "command":
     default:
-      return <CommandCenter {...props} />;
+      return <CommandCenter {...props} onOpenView={setActive} />;
   }
 }
 
 export default function App() {
-  const [active, setActive] = useState<ViewKey>("command");
+  const [active, setActiveState] = useState<ViewKey>(() => (location.hash.replace("#", "") as ViewKey) || "command");
   const [cacheNonce, setCacheNonce] = useState(0);
   const health = useApiResource<HealthSummary>("/data/health-summary", { cacheNonce }, true, false);
   const options = useApiResource<Options>("/metadata/options", undefined, true, true);
   const stableOptions = useMemo(() => options.data, [options.data]);
+  const setActive = (view: ViewKey) => {
+    setActiveState(view);
+    history.replaceState(null, "", `#${view}`);
+  };
+
+  useEffect(() => {
+    const onHash = () => {
+      const next = (location.hash.replace("#", "") || "command") as ViewKey;
+      setActiveState(next);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
   return (
     <Layout
@@ -64,7 +77,7 @@ export default function App() {
     >
       <ErrorBoundary>
         <Suspense fallback={<LoadingState label="Loading view module" />}>
-          <ActiveView active={active} options={stableOptions} />
+          <ActiveView active={active} options={stableOptions} setActive={setActive} />
         </Suspense>
       </ErrorBoundary>
     </Layout>

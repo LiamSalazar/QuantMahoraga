@@ -1,16 +1,37 @@
 import { useMemo, useState } from "react";
 import type { Row } from "../api/types";
+import type { ReactNode } from "react";
 import { formatText } from "../utils/format";
 import { formatCandidateLabel } from "../utils/labels";
 import { EmptyState } from "./States";
 
-export function DataTable({ rows, columns, pageSize = 12 }: { rows: Row[]; columns?: string[]; pageSize?: number }) {
+function hasValue(value: unknown): boolean {
+  if (value === null || value === undefined || value === "") return false;
+  if (typeof value === "number" && !Number.isFinite(value)) return false;
+  return true;
+}
+
+export function DataTable({
+  rows,
+  columns,
+  pageSize = 12,
+  rowAction,
+}: {
+  rows: Row[];
+  columns?: string[];
+  pageSize?: number;
+  rowAction?: (row: Row) => ReactNode;
+}) {
   const [page, setPage] = useState(0);
-  const visibleColumns = useMemo(() => columns ?? Object.keys(rows[0] ?? {}).slice(0, 10), [rows, columns]);
-  if (!rows.length) return <EmptyState title="No rows returned" detail="Reset filters or broaden the research slice." />;
-  const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const cleanRows = useMemo(() => rows.filter((row) => Object.values(row).some(hasValue)), [rows]);
+  const visibleColumns = useMemo(() => {
+    const requested = columns ?? Object.keys(cleanRows[0] ?? {}).slice(0, 10);
+    return requested.filter((column) => cleanRows.some((row) => hasValue(row[column])));
+  }, [cleanRows, columns]);
+  if (!cleanRows.length || !visibleColumns.length) return <EmptyState title="No rows returned" detail="Reset filters or broaden the research slice." />;
+  const pages = Math.max(1, Math.ceil(cleanRows.length / pageSize));
   const safePage = Math.min(page, pages - 1);
-  const pageRows = rows.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const pageRows = cleanRows.slice(safePage * pageSize, safePage * pageSize + pageSize);
   return (
     <div className="table-wrap">
       <table>
@@ -19,6 +40,7 @@ export function DataTable({ rows, columns, pageSize = 12 }: { rows: Row[]; colum
             {visibleColumns.map((column) => (
               <th key={column}>{column.replaceAll("_", " ")}</th>
             ))}
+            {rowAction ? <th>Action</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -36,6 +58,7 @@ export function DataTable({ rows, columns, pageSize = 12 }: { rows: Row[]; colum
                   )}
                 </td>
               ))}
+              {rowAction ? <td className="table-action">{rowAction(row)}</td> : null}
             </tr>
           ))}
         </tbody>

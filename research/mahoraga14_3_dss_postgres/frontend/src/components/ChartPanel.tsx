@@ -7,6 +7,7 @@ export function ChartPanel({
   source,
   ready,
   emptyDetail,
+  action,
   children,
 }: {
   title: string;
@@ -14,13 +15,19 @@ export function ChartPanel({
   source: string;
   ready: boolean;
   emptyDetail?: string;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className="panel chart-panel">
-      <div className="panel-kicker">{question}</div>
-      <h3>{title}</h3>
-      <small>Source: {source}</small>
+      <header className="chart-header">
+        <div>
+          <div className="panel-kicker">{question}</div>
+          <h3>{title}</h3>
+          <small>Source: {source}</small>
+        </div>
+        {action ? <div className="section-action">{action}</div> : null}
+      </header>
       <div className="chart-box">{ready ? children : <EmptyState detail={emptyDetail ?? "Not enough useful combinations for this chart."} />}</div>
     </section>
   );

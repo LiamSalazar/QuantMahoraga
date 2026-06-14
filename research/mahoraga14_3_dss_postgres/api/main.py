@@ -104,6 +104,32 @@ def health_summary() -> dict:
     }
 
 
+@app.get("/data/execution-evidence")
+def execution_evidence() -> dict:
+    evidence = backend.execution_evidence() if hasattr(backend, "execution_evidence") else {"row_counts": backend.row_counts(), "query_performance": [], "source_usage": []}
+    counts = evidence.get("row_counts", {})
+    perf_rows = evidence.get("query_performance", [])
+    source_rows = evidence.get("source_usage", [])
+    summary = pipeline_summary()
+    materialized_views = [name for name in counts if str(name).startswith("mart.mv_")]
+    return {
+        **evidence,
+        "latest_run_id": summary.get("run_id") or summary.get("latest_run_id"),
+        "validation_status": summary.get("validation_passed"),
+        "oltp_tables_loaded": sum(1 for name, count in counts.items() if str(name).startswith("oltp.") and count > 0),
+        "dw_facts_loaded": sum(1 for name, count in counts.items() if str(name).startswith("dw.fact_") and count > 0),
+        "marts_loaded": sum(1 for name, count in counts.items() if str(name).startswith("mart.") and count > 0),
+        "materialized_views_count": len(materialized_views),
+        "real_rows": int(summary.get("real_rows_written_estimate") or 0),
+        "simulated_whatif_rows": int(summary.get("demo_rows_written") or 0),
+        "query_logs_active": bool(perf_rows),
+        "slowest_endpoint": max(perf_rows, key=lambda row: float(row.get("avg_elapsed_ms") or 0), default=None),
+        "fastest_endpoint": min(perf_rows, key=lambda row: float(row.get("avg_elapsed_ms") or 10**9), default=None),
+        "most_used_endpoint": max(perf_rows, key=lambda row: int(row.get("query_count") or 0), default=None),
+        "most_used_source_relation": max(source_rows, key=lambda row: int(row.get("query_count") or 0), default=None),
+    }
+
+
 @app.get("/labels/candidates")
 def labels_candidates() -> dict:
     candidates = _options().get("candidates", [])
@@ -180,11 +206,57 @@ def research_command_center(
         "baseline_comparison": evidence.get("stitched_comparison", []),
         "best_official_worst": best_official_worst_from_extended(),
         "research_questions": registry().get("questions", []),
+        "top_wins_drags": backend.top_wins_drags(candidate_id, universe_id) if hasattr(backend, "top_wins_drags") else {},
         "sensitivity_ranking": extended.get("sensitivity_ranking", []),
         "plateau_radius": extended.get("plateau_radius", []),
         "universe_robustness": extended.get("universe_robustness", []),
         "sources": ["mart.mv_scorecard_candidate", "mart.mv_drawdown_replay", "baseline official outputs", "extended analysis outputs"],
     }
+
+
+@app.get("/research/top-wins-drags")
+def research_top_wins_drags(candidate_id: str = OFFICIAL_CANDIDATE_ID, universe_id: str = OFFICIAL_UNIVERSE_ID) -> dict:
+    _validate(candidate_id, "candidates", "candidate")
+    _validate(universe_id, "universes", "universe")
+    if not hasattr(backend, "top_wins_drags"):
+        return {"folds": [], "tickers": [], "modules": [], "regimes": [], "candidates": []}
+    return _timed("/research/top-wins-drags", "mart.mv_performance_by_fold+mart.mv_ticker_contribution", lambda: backend.top_wins_drags(candidate_id, universe_id))
+
+
+@app.get("/research/decision-casebook")
+def research_decision_casebook(candidate_id: str = OFFICIAL_CANDIDATE_ID, universe_id: str = OFFICIAL_UNIVERSE_ID, fold: int | None = None) -> dict:
+    _validate(candidate_id, "candidates", "candidate")
+    _validate(universe_id, "universes", "universe")
+    if fold is not None:
+        _validate(fold, "folds", "fold")
+    if not hasattr(backend, "decision_casebook"):
+        return {"count": 0, "rows": []}
+    return _timed("/research/decision-casebook", "dw.fact_decision_state+dw.fact_outcome", lambda: backend.decision_casebook(candidate_id, universe_id, fold))
+
+
+@app.get("/research/robustness-compare")
+def research_robustness_compare(universe_id: str = OFFICIAL_UNIVERSE_ID) -> dict:
+    _validate(universe_id, "universes", "universe")
+    if not hasattr(backend, "robustness_compare"):
+        return {"count": 0, "rows": []}
+    return _timed("/research/robustness-compare", "mart.mv_scorecard_candidate", lambda: backend.robustness_compare(universe_id))
+
+
+@app.get("/research/olap-preset")
+def research_olap_preset(
+    preset_id: str,
+    candidate_id: str = OFFICIAL_CANDIDATE_ID,
+    universe_id: str = OFFICIAL_UNIVERSE_ID,
+    fold: int | None = None,
+    limit: int = Query(500, ge=1, le=2000),
+) -> dict:
+    _validate(candidate_id, "candidates", "candidate")
+    _validate(universe_id, "universes", "universe")
+    if fold is not None:
+        _validate(fold, "folds", "fold")
+    if not hasattr(backend, "olap_preset"):
+        return {"preset_id": preset_id, "count": 0, "rows": []}
+    return _timed("/research/olap-preset", "guided_olap_marts", lambda: backend.olap_preset(preset_id, candidate_id, universe_id, fold, limit))
 
 
 @app.get("/overview")

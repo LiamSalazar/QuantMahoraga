@@ -1,5 +1,6 @@
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartPanel } from "../components/ChartPanel";
+import { ChartTooltip, axisLabel } from "../components/ChartTooltip";
 import { DataTable } from "../components/DataTable";
 import { MetricCard } from "../components/MetricCard";
 import { SectionHeader } from "../components/SectionHeader";
@@ -38,9 +39,9 @@ export default function BaselineEvidence() {
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={folds}>
             <CartesianGrid stroke="#22303a" />
-            <XAxis dataKey="Fold" />
-            <YAxis />
-            <Tooltip />
+            <XAxis dataKey="Fold" label={axisLabel("Fold")} />
+            <YAxis label={axisLabel("Value", true)} />
+            <Tooltip content={<ChartTooltip />} />
             <Bar dataKey="Sharpe" fill="#80d8ff" />
             <Bar dataKey="AlphaNW_QQQ" fill="#72f0b1" />
           </BarChart>
@@ -50,9 +51,9 @@ export default function BaselineEvidence() {
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={alpha}>
             <CartesianGrid stroke="#22303a" />
-            <XAxis dataKey="Benchmark" />
-            <YAxis />
-            <Tooltip />
+            <XAxis dataKey="Benchmark" label={axisLabel("Benchmark")} />
+            <YAxis label={axisLabel("Alpha / beta", true)} />
+            <Tooltip content={<ChartTooltip />} />
             <Bar dataKey="alpha_ann" fill="#72f0b1" />
             <Bar dataKey="beta" fill="#f7c76a" />
           </BarChart>
@@ -62,9 +63,9 @@ export default function BaselineEvidence() {
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={cost}>
             <CartesianGrid stroke="#22303a" />
-            <XAxis dataKey="Scenario" />
-            <YAxis />
-            <Tooltip />
+            <XAxis dataKey="Scenario" label={axisLabel("Scenario")} />
+            <YAxis label={axisLabel("CAGR / Sharpe", true)} />
+            <Tooltip content={<ChartTooltip />} />
             <Line dataKey="CAGR" stroke="#72f0b1" strokeWidth={2} />
             <Line dataKey="Sharpe" stroke="#80d8ff" strokeWidth={2} />
           </LineChart>

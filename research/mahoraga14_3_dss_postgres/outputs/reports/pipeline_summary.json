@@ -1,5 +1,5 @@
 {
-  "run_id": "dss_20260614T000809Z",
+  "run_id": "dss_20260614T081045Z",
   "profile": "standard",
   "mode": "postgres",
   "baseline_modified": false,
@@ -38,7 +38,7 @@
     "fact_data_quality": 14
   },
   "validation_passed": true,
-  "generated_at": "2026-06-14T00:08:10.490022+00:00",
+  "generated_at": "2026-06-14T08:10:46.786149+00:00",
   "postgres_load_counts": {
     "oltp.research_run": 1,
     "oltp.data_snapshot": 1,
