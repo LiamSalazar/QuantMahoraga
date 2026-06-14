@@ -1,8 +1,14 @@
 {
-  "run_id": "dss_20260614T000809Z",
-  "generated_at": "2026-06-14T00:08:10.488579+00:00",
+  "run_id": "dss_20260614T000808Z",
+  "profile": "standard",
+  "mode": "parquet",
+  "baseline_modified": false,
+  "total_rows_written": 496967,
+  "real_rows_written_estimate": 494467,
+  "demo_rows_written": 2500,
+  "expected_real_min_rows_for_profile": 4000000,
+  "real_row_target_met": false,
   "row_counts": {
-    "fact_data_quality": 14,
     "research_run": 1,
     "data_snapshot": 1,
     "artifact_inventory": 16,
@@ -28,7 +34,9 @@
     "fact_cost_sensitivity": 6,
     "fact_universe_sensitivity": 15,
     "fact_whatif": 2542,
-    "fact_path_recursive": 2295
+    "fact_path_recursive": 2295,
+    "fact_data_quality": 14
   },
-  "total_rows": 496967
+  "validation_passed": true,
+  "generated_at": "2026-06-14T00:08:09.279064+00:00"
 }

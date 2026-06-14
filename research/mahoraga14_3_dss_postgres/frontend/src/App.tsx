@@ -58,7 +58,7 @@ type Options = {
   regimes: string[];
   metrics: string[];
   benchmarks: string[];
-  date_range: { start: string | null; end: string | null };
+  date_range?: { start?: string | null; end?: string | null } | null;
   slider_ranges: Record<string, { min: number; max: number; values: number[] }>;
   default_candidate: string;
   default_universe: string;
@@ -102,6 +102,23 @@ function valueLabel(value: any, digits = 3): string {
     return n.toFixed(digits);
   }
   return String(value);
+}
+
+function dateLabel(value: any): string {
+  if (typeof value !== "string" || !value) return "";
+  return value.slice(0, 10);
+}
+
+function resolveDateRange(
+  optionsRange?: { start?: string | null; end?: string | null } | null,
+  equityCurve: Row[] = [],
+): { start: string; end: string } {
+  const curveStart = dateLabel(equityCurve[0]?.date_value);
+  const curveEnd = dateLabel(equityCurve.length ? equityCurve[equityCurve.length - 1]?.date_value : "");
+  return {
+    start: dateLabel(optionsRange?.start) || curveStart || "",
+    end: dateLabel(optionsRange?.end) || curveEnd || "",
+  };
 }
 
 function percent(value: any): string {
@@ -262,6 +279,15 @@ function Panel({ title, icon, children, action }: { title: string; icon?: ReactN
   );
 }
 
+function StateMessage({ title, detail, tone = "muted" }: { title: string; detail?: string; tone?: "muted" | "warning" | "error" }) {
+  return (
+    <div className={`state-message ${tone}`}>
+      <strong>{title}</strong>
+      {detail ? <span>{detail}</span> : null}
+    </div>
+  );
+}
+
 function DataTable({ rows, columns, pageSize = 12 }: { rows: Row[]; columns: string[]; pageSize?: number }) {
   const [sortKey, setSortKey] = useState(columns[0] ?? "");
   const [desc, setDesc] = useState(true);
@@ -345,7 +371,7 @@ function Overview({ filters }: { filters: Filters }) {
       />
       <Panel title="Equity Curve" icon={<LineIcon size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <AreaChart data={data.equity_curve}>
               <CartesianGrid stroke="#262b31" vertical={false} />
               <XAxis dataKey="date_value" minTickGap={42} stroke="#88909a" />
@@ -361,7 +387,7 @@ function Overview({ filters }: { filters: Filters }) {
       </Panel>
       <Panel title="Drawdown" icon={<ScanSearch size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <AreaChart data={data.equity_curve}>
               <CartesianGrid stroke="#262b31" vertical={false} />
               <XAxis dataKey="date_value" minTickGap={42} stroke="#88909a" />
@@ -376,7 +402,7 @@ function Overview({ filters }: { filters: Filters }) {
       </Panel>
       <Panel title="Exposure & Turnover" icon={<Activity size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <LineChart data={data.exposure_turnover}>
               <CartesianGrid stroke="#262b31" vertical={false} />
               <XAxis dataKey="date_value" minTickGap={42} stroke="#88909a" />
@@ -442,7 +468,7 @@ function WhatIfLab({ filters, options }: { filters: Filters; options: Options })
       </Panel>
       <Panel title="Pareto Frontier" icon={<GitBranch size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <ScatterChart>
               <CartesianGrid stroke="#262b31" />
               <XAxis dataKey="maxdd" name="MaxDD" stroke="#88909a" />
@@ -488,10 +514,11 @@ function DecisionReplay({ filters, options }: { filters: Filters; options: Optio
   const query = params({ candidate_id: filters.candidate_id, fold: filters.fold, universe_id: filters.universe_id, date: dateValue, ticker });
   const [data] = useApi<any>(`/decision/replay${query}`, { positions: [], modules: [], outcomes: [], market_context: [], timeline: [] });
   const decision = data.decision ?? {};
+  const decisionRange = resolveDateRange(options?.date_range, []);
   return (
     <div className="view-grid">
       <div className="local-controls">
-        <DateControl label="Decision date" value={dateValue} min={options.date_range.start} max={options.date_range.end} onChange={setDateValue} />
+        <DateControl label="Decision date" value={dateValue} min={decisionRange.start || undefined} max={decisionRange.end || undefined} onChange={setDateValue} />
         <Select label="Ticker" value={ticker} options={["", ...options.tickers]} onChange={setTicker} compact />
       </div>
       <StatStrip
@@ -504,7 +531,7 @@ function DecisionReplay({ filters, options }: { filters: Filters; options: Optio
       />
       <Panel title="Decision Timeline" icon={<CalendarDays size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <LineChart data={data.timeline ?? []}>
               <CartesianGrid stroke="#262b31" vertical={false} />
               <XAxis dataKey="date_value" minTickGap={40} stroke="#88909a" />
@@ -520,7 +547,7 @@ function DecisionReplay({ filters, options }: { filters: Filters; options: Optio
       </Panel>
       <Panel title="Weights & Tickers" icon={<BarChart3 size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <BarChart data={(data.positions ?? []).slice(0, 16)}>
               <CartesianGrid stroke="#262b31" vertical={false} />
               <XAxis dataKey="ticker" stroke="#88909a" />
@@ -574,7 +601,7 @@ function SliceDice({ filters, options }: { filters: Filters; options: Options })
       </div>
       <Panel title="Dynamic Cube" icon={<Database size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <BarChart data={(data.rows ?? []).slice(0, 24)}>
               <CartesianGrid stroke="#262b31" vertical={false} />
               <XAxis dataKey={dims[0]} stroke="#88909a" tickFormatter={(v) => String(v).slice(0, 16)} />
@@ -599,7 +626,7 @@ function ModuleLab({ filters }: { filters: Filters }) {
     <div className="view-grid">
       <Panel title="Activation Timeline" icon={<Activity size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <LineChart data={data.timeline ?? []}>
               <CartesianGrid stroke="#262b31" vertical={false} />
               <XAxis dataKey="date_value" minTickGap={42} stroke="#88909a" />
@@ -616,7 +643,7 @@ function ModuleLab({ filters }: { filters: Filters }) {
       </Panel>
       <Panel title="Activation Rate" icon={<BarChart3 size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <BarChart data={data.activation ?? []}>
               <CartesianGrid stroke="#262b31" vertical={false} />
               <XAxis dataKey="module_name" stroke="#88909a" tickFormatter={(v) => String(v).replace("_model", "").slice(0, 16)} />
@@ -639,7 +666,7 @@ function TickerContribution({ filters }: { filters: Filters }) {
     <div className="view-grid">
       <Panel title="Contribution" icon={<BarChart3 size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <BarChart data={rows.slice(0, 18)}>
               <CartesianGrid stroke="#262b31" vertical={false} />
               <XAxis dataKey="ticker" stroke="#88909a" />
@@ -652,7 +679,7 @@ function TickerContribution({ filters }: { filters: Filters }) {
       </Panel>
       <Panel title="Selection x Leader" icon={<Activity size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <ScatterChart>
               <CartesianGrid stroke="#262b31" />
               <XAxis dataKey="selection_rate" stroke="#88909a" />
@@ -679,7 +706,7 @@ function RegimeLab({ filters }: { filters: Filters }) {
     <div className="view-grid">
       <Panel title="Regime Matrix" icon={<Network size={17} />}>
         <ChartBox>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <BarChart data={rows}>
               <CartesianGrid stroke="#262b31" vertical={false} />
               <XAxis dataKey="regime" stroke="#88909a" />
@@ -717,7 +744,7 @@ function Heatmap({ rows, x, y, z, reverse = false, markOfficial = false }: { row
   const max = values.length ? Math.max(...values) : 1;
   return (
     <ChartBox>
-      <ResponsiveContainer>
+      <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
         <ScatterChart>
           <CartesianGrid stroke="#262b31" />
           <XAxis dataKey={x} type="number" stroke="#88909a" domain={["dataMin", "dataMax"]} />
@@ -762,8 +789,8 @@ const tooltipStyle = {
 };
 
 export default function App() {
-  const [options] = useApi<Options>("/metadata/options", emptyOptions);
-  const [health] = useApi<any>("/health", { backend: "parquet", demo_mode: true, row_counts: {} });
+  const [options, optionsLoading, optionsError] = useApi<Options>("/metadata/options", emptyOptions);
+  const [health, healthLoading, healthError] = useApi<any>("/health", { backend: "parquet", demo_mode: true, row_counts: {} });
   const [view, setView] = useState<ViewKey>("overview");
   const [candidate, setCandidate] = useState(OFFICIAL);
   const [fold, setFold] = useState<number | undefined>(undefined);
@@ -772,11 +799,35 @@ export default function App() {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [regime, setRegime] = useState("");
+  const seedQuery = params({ candidate_id: candidate, fold, universe_id: universe, benchmark });
+  const [seedOverview] = useApi<any>(`/overview${seedQuery}`, { equity_curve: [] });
+
+  const safeOptions = useMemo(
+    () => ({
+      ...emptyOptions,
+      ...options,
+      candidates: options?.candidates ?? emptyOptions.candidates,
+      universes: options?.universes ?? emptyOptions.universes,
+      folds: options?.folds ?? emptyOptions.folds,
+      tickers: options?.tickers ?? emptyOptions.tickers,
+      modules: options?.modules ?? emptyOptions.modules,
+      horizons: options?.horizons ?? emptyOptions.horizons,
+      regimes: options?.regimes ?? emptyOptions.regimes,
+      metrics: options?.metrics ?? emptyOptions.metrics,
+      benchmarks: options?.benchmarks ?? emptyOptions.benchmarks,
+      date_range: options?.date_range ?? emptyOptions.date_range,
+      slider_ranges: options?.slider_ranges ?? emptyOptions.slider_ranges,
+      default_candidate: options?.default_candidate ?? emptyOptions.default_candidate,
+      default_universe: options?.default_universe ?? emptyOptions.default_universe,
+    }),
+    [options],
+  );
+  const dateRange = useMemo(() => resolveDateRange(safeOptions.date_range, seedOverview.equity_curve ?? []), [safeOptions.date_range, seedOverview.equity_curve]);
 
   useEffect(() => {
-    if (options.default_candidate) setCandidate(options.default_candidate);
-    if (options.default_universe) setUniverse(options.default_universe);
-  }, [options.default_candidate, options.default_universe]);
+    if (safeOptions.default_candidate) setCandidate(safeOptions.default_candidate);
+    if (safeOptions.default_universe) setUniverse(safeOptions.default_universe);
+  }, [safeOptions.default_candidate, safeOptions.default_universe]);
 
   const filters: Filters = {
     candidate_id: candidate,
@@ -790,10 +841,10 @@ export default function App() {
 
   const activeView = {
     overview: <Overview filters={filters} />,
-    whatif: <WhatIfLab filters={filters} options={options} />,
-    robustness: <Robustness filters={filters} options={options} />,
-    replay: <DecisionReplay filters={filters} options={options} />,
-    slice: <SliceDice filters={filters} options={options} />,
+    whatif: <WhatIfLab filters={filters} options={safeOptions} />,
+    robustness: <Robustness filters={filters} options={safeOptions} />,
+    replay: <DecisionReplay filters={filters} options={safeOptions} />,
+    slice: <SliceDice filters={filters} options={safeOptions} />,
     modules: <ModuleLab filters={filters} />,
     tickers: <TickerContribution filters={filters} />,
     regimes: <RegimeLab filters={filters} />,
@@ -833,14 +884,21 @@ export default function App() {
             <RefreshCcw size={17} />
           </button>
         </header>
+        {(optionsLoading || healthLoading || optionsError || healthError) && (
+          <StateMessage
+            title={optionsError || healthError ? "Metadata unavailable" : "Loading data"}
+            detail={optionsError ? `options: ${optionsError}` : healthError ? `health: ${healthError}` : "Fetching backend metadata and status."}
+            tone={optionsError || healthError ? "warning" : "muted"}
+          />
+        )}
         <section className="filter-bar">
-          <Select label="Candidate" value={candidate} options={options.candidates} onChange={setCandidate} />
-          <Select label="Fold" value={fold ?? "all"} options={["all", ...options.folds]} onChange={(v) => setFold(v === "all" ? undefined : Number(v))} compact />
-          <Select label="Universe" value={universe} options={options.universes} onChange={setUniverse} compact />
-          <Select label="Benchmark" value={benchmark} options={options.benchmarks} onChange={setBenchmark} compact />
-          <Select label="Regime" value={regime} options={["", ...options.regimes]} onChange={setRegime} compact />
-          <DateControl label="Start" value={start} min={options.date_range.start} max={options.date_range.end} onChange={setStart} />
-          <DateControl label="End" value={end} min={options.date_range.start} max={options.date_range.end} onChange={setEnd} />
+          <Select label="Candidate" value={candidate} options={safeOptions.candidates} onChange={setCandidate} />
+          <Select label="Fold" value={fold ?? "all"} options={["all", ...safeOptions.folds]} onChange={(v) => setFold(v === "all" ? undefined : Number(v))} compact />
+          <Select label="Universe" value={universe} options={safeOptions.universes} onChange={setUniverse} compact />
+          <Select label="Benchmark" value={benchmark} options={safeOptions.benchmarks} onChange={setBenchmark} compact />
+          <Select label="Regime" value={regime} options={["", ...safeOptions.regimes]} onChange={setRegime} compact />
+          <DateControl label="Start" value={start} min={dateRange.start || undefined} max={dateRange.end || undefined} onChange={setStart} />
+          <DateControl label="End" value={end} min={dateRange.start || undefined} max={dateRange.end || undefined} onChange={setEnd} />
         </section>
         {activeView}
       </main>

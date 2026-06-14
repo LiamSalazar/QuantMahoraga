@@ -301,6 +301,8 @@ input[type="range"] {
 .panel {
   grid-column: span 6;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   border: 1px solid #20252b;
   border-radius: 8px;
   background: #0d1014;
@@ -328,6 +330,39 @@ input[type="range"] {
   width: 100%;
   height: 330px;
   min-height: 280px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.state-message {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+  border: 1px solid #303740;
+  border-radius: 8px;
+  background: #101419;
+  padding: 12px 14px;
+}
+
+.state-message strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.state-message span {
+  color: #9aa3ad;
+  font-size: 12px;
+}
+
+.state-message.warning {
+  border-color: #5e5231;
+  background: #18150f;
+}
+
+.state-message.error {
+  border-color: #6e3642;
+  background: #190f12;
 }
 
 .table-wrap {
@@ -440,5 +475,10 @@ tbody tr:hover {
   .control,
   .control.compact {
     min-width: 0;
+  }
+
+  .chart-box {
+    height: 280px;
+    min-height: 240px;
   }
 }

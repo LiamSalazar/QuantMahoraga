@@ -1,0 +1,187 @@
+{
+  "passed": true,
+  "generated_at": "2026-06-14T00:08:25.629638+00:00",
+  "checked_tables": [
+    "oltp.research_run",
+    "oltp.data_snapshot",
+    "oltp.artifact_inventory",
+    "oltp.candidate_grid",
+    "dw.dim_date",
+    "dw.dim_asset",
+    "dw.dim_candidate",
+    "dw.dim_universe",
+    "dw.dim_fold",
+    "dw.dim_module",
+    "dw.dim_regime",
+    "dw.dim_horizon",
+    "dw.dim_metric",
+    "dw.dim_scenario",
+    "dw.fact_market_bar",
+    "dw.fact_signal_daily",
+    "dw.fact_decision_state",
+    "dw.fact_position_daily",
+    "dw.fact_module_trace",
+    "dw.fact_outcome",
+    "dw.fact_candidate_metric",
+    "dw.fact_robustness_surface",
+    "dw.fact_cost_sensitivity",
+    "dw.fact_universe_sensitivity",
+    "dw.fact_whatif",
+    "dw.fact_path_recursive",
+    "dw.fact_data_quality"
+  ],
+  "table_counts": {
+    "oltp.research_run": 1,
+    "oltp.data_snapshot": 1,
+    "oltp.artifact_inventory": 16,
+    "oltp.candidate_grid": 57,
+    "dw.dim_date": 2295,
+    "dw.dim_asset": 52,
+    "dw.dim_candidate": 42,
+    "dw.dim_universe": 5,
+    "dw.dim_fold": 5,
+    "dw.dim_module": 7,
+    "dw.dim_regime": 6,
+    "dw.dim_horizon": 4,
+    "dw.dim_metric": 9,
+    "dw.dim_scenario": 2542,
+    "dw.fact_market_bar": 4590,
+    "dw.fact_signal_daily": 165240,
+    "dw.fact_decision_state": 13770,
+    "dw.fact_position_daily": 165240,
+    "dw.fact_module_trace": 96390,
+    "dw.fact_outcome": 41310,
+    "dw.fact_candidate_metric": 57,
+    "dw.fact_robustness_surface": 456,
+    "dw.fact_cost_sensitivity": 6,
+    "dw.fact_universe_sensitivity": 15,
+    "dw.fact_whatif": 2542,
+    "dw.fact_path_recursive": 2295,
+    "dw.fact_data_quality": 14
+  },
+  "parquet_counts": {
+    "oltp.research_run": 1,
+    "oltp.data_snapshot": 1,
+    "oltp.artifact_inventory": 16,
+    "oltp.candidate_grid": 57,
+    "dw.dim_date": 2295,
+    "dw.dim_asset": 52,
+    "dw.dim_candidate": 42,
+    "dw.dim_universe": 5,
+    "dw.dim_fold": 5,
+    "dw.dim_module": 7,
+    "dw.dim_regime": 6,
+    "dw.dim_horizon": 4,
+    "dw.dim_metric": 9,
+    "dw.dim_scenario": 2542,
+    "dw.fact_market_bar": 4590,
+    "dw.fact_signal_daily": 165240,
+    "dw.fact_decision_state": 13770,
+    "dw.fact_position_daily": 165240,
+    "dw.fact_module_trace": 96390,
+    "dw.fact_outcome": 41310,
+    "dw.fact_candidate_metric": 57,
+    "dw.fact_robustness_surface": 456,
+    "dw.fact_cost_sensitivity": 6,
+    "dw.fact_universe_sensitivity": 15,
+    "dw.fact_whatif": 2542,
+    "dw.fact_path_recursive": 2295,
+    "dw.fact_data_quality": 14
+  },
+  "checked_views": [
+    "mart.mv_scorecard_candidate",
+    "mart.mv_decision_replay",
+    "mart.mv_module_effectiveness",
+    "mart.mv_ticker_contribution",
+    "mart.mv_regime_behavior",
+    "mart.mv_whatif_grid",
+    "mart.mv_query_performance"
+  ],
+  "view_counts": {
+    "mart.mv_scorecard_candidate": 54,
+    "mart.mv_decision_replay": 41310,
+    "mart.mv_module_effectiveness": 630,
+    "mart.mv_ticker_contribution": 360,
+    "mart.mv_regime_behavior": 168,
+    "mart.mv_whatif_grid": 2542,
+    "mart.mv_query_performance": 12
+  },
+  "query_performance": {
+    "count": 12,
+    "rows": [
+      {
+        "endpoint": "/candidate/compare",
+        "backend": "postgres",
+        "query_count": 2,
+        "last_seen_at": "2026-06-13 17:42:22.928059-06:00"
+      },
+      {
+        "endpoint": "/fold/performance",
+        "backend": "postgres",
+        "query_count": 1,
+        "last_seen_at": "2026-06-13 17:42:22.850414-06:00"
+      },
+      {
+        "endpoint": "/regime/behavior",
+        "backend": "postgres",
+        "query_count": 2,
+        "last_seen_at": "2026-06-13 17:42:22.823094-06:00"
+      },
+      {
+        "endpoint": "/ticker/contribution",
+        "backend": "postgres",
+        "query_count": 2,
+        "last_seen_at": "2026-06-13 17:42:22.691806-06:00"
+      },
+      {
+        "endpoint": "/module/effectiveness",
+        "backend": "postgres",
+        "query_count": 2,
+        "last_seen_at": "2026-06-13 17:42:22.557429-06:00"
+      },
+      {
+        "endpoint": "/slice",
+        "backend": "postgres",
+        "query_count": 4,
+        "last_seen_at": "2026-06-13 17:42:22.421977-06:00"
+      },
+      {
+        "endpoint": "/decision/replay",
+        "backend": "postgres",
+        "query_count": 2,
+        "last_seen_at": "2026-06-13 17:42:22.316753-06:00"
+      },
+      {
+        "endpoint": "/whatif/grid",
+        "backend": "postgres",
+        "query_count": 3,
+        "last_seen_at": "2026-06-13 17:42:22.136018-06:00"
+      },
+      {
+        "endpoint": "/robustness/surface",
+        "backend": "postgres",
+        "query_count": 2,
+        "last_seen_at": "2026-06-13 17:42:21.907166-06:00"
+      },
+      {
+        "endpoint": "/scorecard",
+        "backend": "postgres",
+        "query_count": 3,
+        "last_seen_at": "2026-06-13 17:42:21.778883-06:00"
+      },
+      {
+        "endpoint": "/overview",
+        "backend": "postgres",
+        "query_count": 1,
+        "last_seen_at": "2026-06-13 17:42:21.703465-06:00"
+      },
+      {
+        "endpoint": "/metadata/options",
+        "backend": "postgres",
+        "query_count": 4,
+        "last_seen_at": "2026-06-13 17:42:21.453693-06:00"
+      }
+    ]
+  },
+  "failures": []
+}

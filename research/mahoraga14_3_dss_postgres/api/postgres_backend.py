@@ -69,6 +69,10 @@ class PostgresBackend:
         return {row["table_name"]: int(row["row_count"]) for row in result["rows"]}
 
     def options(self) -> dict[str, Any]:
+        date_bounds = self._query("SELECT MIN(date_value) AS start_date, MAX(date_value) AS end_date FROM dw.dim_date")["rows"]
+        date_row = date_bounds[0] if date_bounds else {}
+        start_date = date_row.get("start_date")
+        end_date = date_row.get("end_date")
         return {
             "candidates": [row["candidate_id"] for row in self._query("SELECT candidate_id FROM dw.dim_candidate ORDER BY candidate_id")["rows"]],
             "universes": [row["universe_id"] for row in self._query("SELECT universe_id FROM dw.dim_universe ORDER BY universe_id")["rows"]],
@@ -79,6 +83,10 @@ class PostgresBackend:
             "regimes": [row["regime_name"] for row in self._query("SELECT regime_name FROM dw.dim_regime ORDER BY regime_name")["rows"]],
             "metrics": [row["metric_name"] for row in self._query("SELECT metric_name FROM dw.dim_metric ORDER BY metric_name")["rows"]],
             "benchmarks": ["QQQ", "SPY", "CONTROL"],
+            "date_range": {
+                "start": start_date.isoformat() if start_date else None,
+                "end": end_date.isoformat() if end_date else None,
+            },
         }
 
     def scorecard(self, candidate_id=None, universe_id=None, limit=200):

@@ -1,0 +1,47 @@
+{
+  "passed": true,
+  "generated_at": "2026-06-14T00:08:26.085400+00:00",
+  "checked_tables": [
+    "oltp.research_run",
+    "oltp.data_snapshot",
+    "oltp.artifact_inventory",
+    "oltp.candidate_grid",
+    "dw.dim_candidate",
+    "dw.dim_universe",
+    "dw.fact_decision_state",
+    "dw.fact_position_daily",
+    "dw.fact_module_trace",
+    "dw.fact_outcome",
+    "dw.fact_whatif"
+  ],
+  "row_counts": {
+    "oltp.research_run": 1,
+    "oltp.data_snapshot": 1,
+    "oltp.artifact_inventory": 16,
+    "oltp.candidate_grid": 57,
+    "dw.dim_candidate": 42,
+    "dw.dim_universe": 5,
+    "dw.fact_decision_state": 13770,
+    "dw.fact_position_daily": 165240,
+    "dw.fact_module_trace": 96390,
+    "dw.fact_outcome": 41310,
+    "dw.fact_whatif": 2542
+  },
+  "checked_views": [
+    "mart.mv_scorecard_candidate",
+    "mart.mv_decision_replay",
+    "mart.mv_module_effectiveness",
+    "mart.mv_ticker_contribution",
+    "mart.mv_regime_behavior",
+    "mart.mv_whatif_grid"
+  ],
+  "view_counts": {
+    "mart.mv_scorecard_candidate": 54,
+    "mart.mv_decision_replay": 41310,
+    "mart.mv_module_effectiveness": 630,
+    "mart.mv_ticker_contribution": 360,
+    "mart.mv_regime_behavior": 168,
+    "mart.mv_whatif_grid": 2542
+  },
+  "failures": []
+}
