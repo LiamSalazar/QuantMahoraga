@@ -17,11 +17,19 @@ def write_tables(tables: dict[str, pl.DataFrame], paths: DssPaths, run_id: str) 
         target = target_dir / f"{name}.parquet"
         frame.write_parquet(target)
         row_counts[name] = frame.height
+    manifest_path = paths.reports_root / "parquet_manifest.json"
+    manifest_counts: dict[str, int] = {}
+    if manifest_path.exists():
+        try:
+            manifest_counts = {str(name): int(count) for name, count in json.loads(manifest_path.read_text(encoding="utf-8")).get("row_counts", {}).items()}
+        except Exception:
+            manifest_counts = {}
+    manifest_counts.update(row_counts)
     manifest = {
         "run_id": run_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "row_counts": row_counts,
-        "total_rows": sum(row_counts.values()),
+        "row_counts": manifest_counts,
+        "total_rows": sum(manifest_counts.values()),
     }
-    (paths.reports_root / "parquet_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return row_counts

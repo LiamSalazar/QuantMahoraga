@@ -390,7 +390,7 @@ function Overview({ filters }: { filters: Filters }) {
         </ChartBox>
       </Panel>
       <Panel title="Fold Performance" icon={<Table2 size={17} />}>
-        <DataTable rows={data.fold_performance ?? []} columns={["fold", "horizon", "avg_alpha_vs_qqq", "helped_rate", "avg_exposure", "observations"]} />
+        <DataTable rows={data.fold_performance ?? []} columns={["fold", "avg_realized_return", "avg_alpha_vs_qqq", "helped_rate", "avg_exposure", "observations"]} />
       </Panel>
     </div>
   );
@@ -705,7 +705,7 @@ function QueryPerformance() {
   return (
     <div className="view-grid">
       <Panel title="Query Performance" icon={<MonitorCog size={17} />}>
-        <DataTable rows={data.rows ?? []} columns={["endpoint", "backend", "source_relation", "rows_returned", "elapsed_ms", "used_materialized_view", "created_at"]} />
+        <DataTable rows={data.rows ?? []} columns={["endpoint", "backend", "source_relation", "query_count", "avg_elapsed_ms", "p95_elapsed_ms", "avg_rows_returned", "used_materialized_view", "last_seen_at"]} />
       </Panel>
     </div>
   );

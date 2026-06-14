@@ -1,102 +1,107 @@
-# Mahoraga Quant DSS / Research Intelligence Layer
+# Mahoraga Quant DSS Postgres
 
-This layer turns frozen Mahoraga14_3 baseline outputs and extended-analysis audit artifacts into a Decision Support System for research exploration.
+Decision Support System over frozen Mahoraga14_3 baseline outputs and extended-analysis audit artifacts.
 
-It does not modify `baseline/mahoraga14_3_baseline`, recalibrate the official candidate, run live trading, or replace the official CSV/Parquet evidence. It reads existing artifacts, builds Parquet staging tables, can load a real Postgres OLTP/DW/mart model, serves FastAPI endpoints, and provides a dark interactive web DSS.
+This layer does not modify `baseline/mahoraga14_3_baseline`, recalibrate official results, or mark synthetic rows as real. It reads existing artifacts, writes Parquet staging, loads a real Postgres OLTP/DW/mart model, exposes FastAPI endpoints, and serves the React DSS.
 
-## What It Answers
+## Linux With Local Postgres Socket
 
-- Robustness by candidate, fold, universe, regime, and multiplier neighborhood.
-- What-if behavior for budget, conviction, leader, backoff, costs, and slippage.
-- Decision replay by date, fold, candidate, module, ticker, and future horizon.
-- Slice, dice, drill-down, roll-up, and pivot-style guided cube exploration.
-- Module attribution, ticker contribution, regime behavior, drawdown replay, and query performance.
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres
+source .venv/bin/activate
 
-## Modes
+export DSS_BACKEND=postgres
+export DATABASE_URL="postgresql:///mahoraga_dss"
 
-| Mode | Command | Purpose |
-|---|---|---|
-| A. Postgres real | `python -m etl.run_pipeline --mode postgres --profile standard` | Linux/final presentation with real `DATABASE_URL`, SQL schemas, COPY load, and materialized views. |
-| B. Docker optional | `docker compose -f docker-compose.postgres.yml up -d` | Local Postgres if Docker Desktop or Linux Docker is available. |
-| C. Dev without Postgres | `python -m etl.run_pipeline --mode parquet --profile small` | Windows-friendly API/frontend development from Parquet plus explicitly flagged demo what-if rows. |
+python -m etl.run_pipeline --mode parquet --profile standard
+python -m etl.run_pipeline --mode postgres --profile standard --truncate
+python -m etl.refresh_views
+python -m etl.validate_outputs
+python -m etl.validate_postgres
+python -m scripts.smoke_postgres
 
-## Current Local Build
+uvicorn api.main:app --reload --host 127.0.0.1 --port 8002
+```
 
-The latest local `small` parquet run produced:
+Frontend:
 
-- Total rows written: `492,687`.
-- Real artifact-derived row estimate: `492,327`.
-- Explicit demo what-if rows: `360`.
-- Validation: passed.
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres/frontend
+npm install
+VITE_API_BASE="http://127.0.0.1:8002" npm run dev
+```
 
-The current repository artifacts do not contain enough granular candidate/fold/ticker rows to honestly produce a 4M+ real fact set. The `standard` and `competition` profiles are configured for larger what-if grids and real Postgres loading, but they will still report whether the real-row target is met instead of inventing official performance.
+## Other Modes
 
-## Run on Windows Without Postgres
+Windows without Postgres:
 
 ```powershell
 cd D:\QuantMahoraga\research\mahoraga14_3_dss_postgres
 python -m pip install -r requirements.txt
+$env:DSS_BACKEND="parquet"
 python -m etl.run_pipeline --mode parquet --profile small
-uvicorn api.main:app --host 127.0.0.1 --port 8010
+uvicorn api.main:app --host 127.0.0.1 --port 8002
 ```
 
-In another terminal:
-
-```powershell
-cd D:\QuantMahoraga\research\mahoraga14_3_dss_postgres\frontend
-npm.cmd install
-$env:VITE_API_BASE="http://127.0.0.1:8010"
-npm.cmd run dev
-```
-
-Open `http://127.0.0.1:5174`.
-
-## Run on Linux With Postgres
-
-```bash
-cd /path/to/QuantMahoraga/research/mahoraga14_3_dss_postgres
-python -m pip install -r requirements.txt
-export DATABASE_URL="postgresql://mahoraga:mahoraga@127.0.0.1:5432/mahoraga_dss"
-python -m etl.run_pipeline --mode postgres --profile standard
-uvicorn api.main:app --host 127.0.0.1 --port 8010
-```
-
-For Docker:
+Docker Postgres:
 
 ```bash
 docker compose -f docker-compose.postgres.yml up -d
-export DATABASE_URL="postgresql://mahoraga:mahoraga@127.0.0.1:5432/mahoraga_dss"
-python -m etl.run_pipeline --mode postgres --profile standard
+export DSS_BACKEND=postgres
+export DATABASE_URL="postgresql://<user>:<password>@127.0.0.1:5432/mahoraga_dss"
+python -m etl.run_pipeline --mode postgres --profile standard --truncate
 ```
 
-## API
+TCP Postgres without Docker:
 
-Endpoints:
-
-- `GET /health`
-- `GET /metadata/options`
-- `GET /overview`
-- `GET /scorecard`
-- `GET /robustness/surface`
-- `GET /whatif/grid`
-- `GET /decision/replay`
-- `GET /slice`
-- `GET /drilldown`
-- `GET /module/effectiveness`
-- `GET /ticker/contribution`
-- `GET /regime/behavior`
-- `GET /fold/performance`
-- `GET /candidate/compare`
-- `GET /query/performance`
-
-Filters are validated against real option lists from dimensions. The frontend uses only guided controls: selects, sliders, toggles/checkboxes, date pickers, segmented controls, and table sorting/paging.
-
-## Tests
-
-```powershell
-cd D:\QuantMahoraga\research\mahoraga14_3_dss_postgres
-python -m pytest
+```bash
+export DSS_BACKEND=postgres
+export DATABASE_URL="postgresql://<user>:<password>@127.0.0.1:5432/mahoraga_dss"
 ```
 
-Latest local result: `7 passed`.
+Do not commit real passwords. Keep credentials in the shell, a local untracked `.env`, or a secret manager.
 
+## Current Validated Counts
+
+Latest Linux/Postgres standard run:
+
+- `total_rows_written`: `496,967`
+- `real_rows_written_estimate`: `494,467`
+- `demo_rows_written`: `2,500`
+- `expected_real_min_rows_for_profile`: `4,000,000`
+- `real_row_target_met`: `false`
+- `validation_passed`: `true`
+
+The available real artifacts currently produce about 494k real rows. The architecture can scale with more real candidates, universes, horizons, module traces, decisions, positions, and outcomes, but this iteration does not invent rows or inflate official results. Extended what-if/demo rows remain flagged with `demo_mode=true`.
+
+## API Endpoints
+
+With `DSS_BACKEND=postgres`, these endpoints are validated:
+
+- `/health`
+- `/metadata/options`
+- `/overview`
+- `/scorecard`
+- `/robustness/surface`
+- `/whatif/grid`
+- `/decision/replay`
+- `/slice`
+- `/drilldown`
+- `/module/effectiveness`
+- `/ticker/contribution`
+- `/regime/behavior`
+- `/fold/performance`
+- `/candidate/compare`
+- `/query/performance`
+
+`/query/performance` reads recent logs directly from `oltp.dss_query_log`; `mart.mv_query_performance` remains the refreshable historical summary.
+
+## Data Checks
+
+```bash
+python -m etl.validate_outputs
+python -m etl.validate_postgres
+python -m scripts.smoke_postgres
+```
+
+The smoke test prints JSON with `passed`, `checked_tables`, `row_counts`, `checked_views`, and `failures`, and exits with code 1 on critical failure.

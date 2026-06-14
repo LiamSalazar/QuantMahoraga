@@ -6,6 +6,7 @@ import polars as pl
 
 from .paths import DssPaths, get_paths
 from .date_utils import parse_date
+from .lfs_guard import assert_not_lfs_pointer
 
 
 PARQUET_CUBES = {
@@ -29,10 +30,12 @@ CSV_TABLES = {
 
 
 def _read_parquet(path: Path) -> pl.DataFrame:
+    assert_not_lfs_pointer(path)
     return pl.read_parquet(path) if path.exists() else pl.DataFrame()
 
 
 def _read_csv(path: Path) -> pl.DataFrame:
+    assert_not_lfs_pointer(path)
     return pl.read_csv(path, infer_schema_length=1000, ignore_errors=True) if path.exists() else pl.DataFrame()
 
 

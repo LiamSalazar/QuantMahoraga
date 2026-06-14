@@ -9,6 +9,7 @@ from typing import Any
 import polars as pl
 
 from .config import PHASE
+from .lfs_guard import assert_not_lfs_pointer
 from .paths import DssPaths, ensure_output_dirs, get_paths
 
 
@@ -43,6 +44,7 @@ def _schema(path: Path) -> list[dict[str, str]]:
     if not path.exists() or path.suffix.lower() not in {".csv", ".parquet"}:
         return []
     try:
+        assert_not_lfs_pointer(path)
         if path.suffix.lower() == ".parquet":
             schema = pl.scan_parquet(path).collect_schema()
         else:
@@ -56,6 +58,7 @@ def _row_count(path: Path) -> int | None:
     if not path.exists() or path.suffix.lower() not in {".csv", ".parquet"}:
         return None
     try:
+        assert_not_lfs_pointer(path)
         if path.suffix.lower() == ".parquet":
             return int(pl.scan_parquet(path).select(pl.len()).collect().item())
         return int(pl.scan_csv(path, infer_schema_length=200).select(pl.len()).collect().item())

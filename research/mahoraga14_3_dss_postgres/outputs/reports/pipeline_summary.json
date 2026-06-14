@@ -1,5 +1,5 @@
 {
-  "run_id": "dss_20260613T225425Z",
+  "run_id": "dss_20260613T234528Z",
   "profile": "standard",
   "mode": "postgres",
   "baseline_modified": false,
@@ -38,5 +38,34 @@
     "fact_data_quality": 14
   },
   "validation_passed": true,
-  "generated_at": "2026-06-13T22:54:26.188906+00:00"
+  "generated_at": "2026-06-13T23:45:29.592884+00:00",
+  "postgres_load_counts": {
+    "oltp.research_run": 1,
+    "oltp.data_snapshot": 1,
+    "oltp.artifact_inventory": 16,
+    "oltp.candidate_grid": 57,
+    "dw.dim_date": 2295,
+    "dw.dim_asset": 52,
+    "dw.dim_candidate": 42,
+    "dw.dim_universe": 5,
+    "dw.dim_fold": 5,
+    "dw.dim_module": 7,
+    "dw.dim_regime": 6,
+    "dw.dim_horizon": 4,
+    "dw.dim_metric": 9,
+    "dw.dim_scenario": 2542,
+    "dw.fact_market_bar": 4590,
+    "dw.fact_signal_daily": 165240,
+    "dw.fact_decision_state": 13770,
+    "dw.fact_position_daily": 165240,
+    "dw.fact_module_trace": 96390,
+    "dw.fact_outcome": 41310,
+    "dw.fact_candidate_metric": 57,
+    "dw.fact_robustness_surface": 456,
+    "dw.fact_cost_sensitivity": 6,
+    "dw.fact_universe_sensitivity": 15,
+    "dw.fact_whatif": 2542,
+    "dw.fact_path_recursive": 2295,
+    "dw.fact_data_quality": 14
+  }
 }

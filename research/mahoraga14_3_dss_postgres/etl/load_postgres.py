@@ -11,6 +11,10 @@ from .config import RuntimeConfig, make_config
 from .paths import DssPaths, get_paths
 
 LOAD_ORDER = [
+    "oltp.research_run",
+    "oltp.data_snapshot",
+    "oltp.artifact_inventory",
+    "oltp.candidate_grid",
     "dw.dim_date",
     "dw.dim_asset",
     "dw.dim_candidate",
@@ -39,7 +43,14 @@ LOAD_ORDER = [
 
 def _parquet_for(paths: DssPaths, qualified_table: str) -> Path:
     schema, table = qualified_table.split(".", 1)
-    family = "dimensions" if table.startswith("dim_") else "facts" if table.startswith("fact_") else "oltp"
+    if schema == "oltp":
+        family = "oltp"
+    elif schema == "dw" and table.startswith("dim_"):
+        family = "dimensions"
+    elif schema == "dw" and table.startswith("fact_"):
+        family = "facts"
+    else:
+        family = schema
     return paths.parquet_root / family / f"{table}.parquet"
 
 
@@ -65,7 +76,17 @@ def bootstrap_schema(database_url: str, paths: DssPaths) -> None:
         execute_sql_file(database_url, paths.sql_root / name)
 
 
-def _copy_table(database_url: str, qualified_table: str, parquet_path: Path, truncate: bool = False) -> int:
+def truncate_loaded_tables(database_url: str) -> None:
+    import psycopg
+
+    table_list = ", ".join(LOAD_ORDER)
+    with psycopg.connect(database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE")
+        conn.commit()
+
+
+def _copy_table(database_url: str, qualified_table: str, parquet_path: Path) -> int:
     import psycopg
 
     if not parquet_path.exists():
@@ -80,8 +101,6 @@ def _copy_table(database_url: str, qualified_table: str, parquet_path: Path, tru
         columns = ", ".join(f'"{column}"' for column in df.columns)
         with psycopg.connect(database_url) as conn:
             with conn.cursor() as cur:
-                if truncate:
-                    cur.execute(f"TRUNCATE TABLE {qualified_table} CASCADE")
                 with tmp_path.open("r", encoding="utf-8", newline="") as handle:
                     with cur.copy(f"COPY {qualified_table} ({columns}) FROM STDIN WITH (FORMAT CSV, HEADER TRUE)") as copy:
                         while chunk := handle.read(1024 * 1024):
@@ -98,9 +117,11 @@ def load_all(config: RuntimeConfig, paths: DssPaths | None = None, bootstrap: bo
         raise RuntimeError("DATABASE_URL is required for Postgres mode")
     if bootstrap:
         bootstrap_schema(config.database_url, paths)
+    if truncate:
+        truncate_loaded_tables(config.database_url)
     counts: dict[str, int] = {}
     for qualified_table in LOAD_ORDER:
-        counts[qualified_table] = _copy_table(config.database_url, qualified_table, _parquet_for(paths, qualified_table), truncate=truncate)
+        counts[qualified_table] = _copy_table(config.database_url, qualified_table, _parquet_for(paths, qualified_table))
     return counts
 
 

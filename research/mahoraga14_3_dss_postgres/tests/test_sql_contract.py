@@ -14,3 +14,10 @@ def test_sql_contract_contains_required_schemas_and_marts() -> None:
         assert f"dw.{fact}" in facts_sql
     for mart in ["mv_scorecard_candidate", "mv_robustness_surface", "mv_decision_replay", "mv_query_performance"]:
         assert f"mart.{mart}" in marts_sql
+
+
+def test_fact_candidate_metric_allows_non_applicable_sweep_role() -> None:
+    facts_sql = (get_paths().sql_root / "004_create_facts.sql").read_text(encoding="utf-8")
+    assert "sweep_role TEXT," in facts_sql
+    assert "ALTER COLUMN sweep_role DROP NOT NULL" in facts_sql
+    assert "uix_fact_candidate_metric_scope" in facts_sql

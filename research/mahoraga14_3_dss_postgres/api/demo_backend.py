@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
+
+os.environ.setdefault("POLARS_MAX_THREADS", "1")
 
 import polars as pl
 
@@ -75,7 +78,7 @@ class ParquetBackend:
                 "used_materialized_view": source_relation.startswith("mart."),
                 "scanned_rows": None,
                 "demo_mode": self.demo_mode(),
-                "created_at": datetime.utcnow().isoformat() + "Z",
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
         return result
@@ -85,6 +88,13 @@ class ParquetBackend:
         return not whatif.is_empty() and bool(whatif.get_column("demo_mode").any())
 
     def row_counts(self) -> dict[str, int]:
+        manifest = self.paths.reports_root / "parquet_manifest.json"
+        if manifest.exists():
+            try:
+                payload = json.loads(manifest.read_text(encoding="utf-8"))
+                return {str(table): int(count) for table, count in payload.get("row_counts", {}).items()}
+            except Exception:
+                pass
         counts: dict[str, int] = {}
         for family in ["dimensions", "facts", "oltp"]:
             root = self.paths.parquet_root / family

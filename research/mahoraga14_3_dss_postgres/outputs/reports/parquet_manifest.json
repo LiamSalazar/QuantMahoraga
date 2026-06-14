@@ -1,8 +1,34 @@
 {
-  "run_id": "dss_20260613T225425Z",
-  "generated_at": "2026-06-13T22:54:26.187079+00:00",
+  "run_id": "dss_20260613T234528Z",
+  "generated_at": "2026-06-13T23:45:29.591278+00:00",
   "row_counts": {
-    "fact_data_quality": 14
+    "fact_data_quality": 14,
+    "research_run": 1,
+    "data_snapshot": 1,
+    "artifact_inventory": 16,
+    "candidate_grid": 57,
+    "dim_date": 2295,
+    "dim_asset": 52,
+    "dim_candidate": 42,
+    "dim_universe": 5,
+    "dim_fold": 5,
+    "dim_module": 7,
+    "dim_regime": 6,
+    "dim_horizon": 4,
+    "dim_scenario": 2542,
+    "dim_metric": 9,
+    "fact_market_bar": 4590,
+    "fact_signal_daily": 165240,
+    "fact_decision_state": 13770,
+    "fact_position_daily": 165240,
+    "fact_module_trace": 96390,
+    "fact_outcome": 41310,
+    "fact_candidate_metric": 57,
+    "fact_robustness_surface": 456,
+    "fact_cost_sensitivity": 6,
+    "fact_universe_sensitivity": 15,
+    "fact_whatif": 2542,
+    "fact_path_recursive": 2295
   },
-  "total_rows": 14
+  "total_rows": 496967
 }

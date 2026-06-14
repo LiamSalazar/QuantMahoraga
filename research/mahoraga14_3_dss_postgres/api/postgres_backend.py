@@ -98,8 +98,8 @@ class PostgresBackend:
 
     def overview(self, candidate_id, fold, universe_id, benchmark, start_date, end_date):
         params = {"candidate_id": candidate_id, "universe_id": universe_id, "fold": fold, "start_date": start_date, "end_date": end_date}
-        fold_sql = "AND (%(fold)s IS NULL OR fold = %(fold)s)"
-        date_sql = "AND (%(start_date)s IS NULL OR date_value >= %(start_date)s::date) AND (%(end_date)s IS NULL OR date_value <= %(end_date)s::date)"
+        fold_sql = "AND (%(fold)s::int IS NULL OR fold = %(fold)s::int)"
+        date_sql = "AND (%(start_date)s::date IS NULL OR date_value >= %(start_date)s::date) AND (%(end_date)s::date IS NULL OR date_value <= %(end_date)s::date)"
         equity = self._query(
             f"""
             SELECT date_value, equity, drawdown, rolling_peak
@@ -134,9 +134,9 @@ class PostgresBackend:
             SELECT *
             FROM mart.mv_robustness_surface
             WHERE metric_name = %(metric)s
-              AND (%(fold)s IS NULL OR fold IS NULL OR fold = %(fold)s)
-              AND (%(universe_id)s IS NULL OR universe_id = %(universe_id)s)
-              AND (%(regime)s IS NULL OR regime IS NULL OR regime = %(regime)s)
+              AND (%(fold)s::int IS NULL OR fold IS NULL OR fold = %(fold)s::int)
+              AND (%(universe_id)s::text IS NULL OR universe_id = %(universe_id)s::text)
+              AND (%(regime)s::text IS NULL OR regime IS NULL OR regime = %(regime)s::text)
             ORDER BY budget_multiplier, conviction_multiplier
             LIMIT %(limit)s
             """,
@@ -158,11 +158,11 @@ class PostgresBackend:
             SELECT *
             FROM mart.mv_whatif_grid
             WHERE candidate_id = %(candidate_id)s
-              AND (%(fold)s IS NULL OR fold = %(fold)s)
+              AND (%(fold)s::int IS NULL OR fold = %(fold)s::int)
               AND universe_id = %(universe_id)s
               AND horizon = %(horizon)s
-              AND (%(cost_bps)s IS NULL OR cost_bps = %(cost_bps)s)
-              AND (%(slippage_bps)s IS NULL OR slippage_bps = %(slippage_bps)s)
+              AND (%(cost_bps)s::double precision IS NULL OR cost_bps = %(cost_bps)s::double precision)
+              AND (%(slippage_bps)s::double precision IS NULL OR slippage_bps = %(slippage_bps)s::double precision)
             ORDER BY robust_score DESC NULLS LAST, sharpe DESC NULLS LAST
             LIMIT %(limit)s
             """,
@@ -179,9 +179,9 @@ class PostgresBackend:
                 *
             FROM mart.mv_decision_replay
             WHERE candidate_id = %(candidate_id)s
-              AND (%(fold)s IS NULL OR fold = %(fold)s)
+              AND (%(fold)s::int IS NULL OR fold = %(fold)s::int)
               AND universe_id = %(universe_id)s
-              AND (%(date_value)s IS NULL OR date_value = %(date_value)s::date)
+              AND (%(date_value)s::date IS NULL OR date_value = %(date_value)s::date)
             ORDER BY date_value, candidate_id, fold, universe_id
             LIMIT 1
             """,
@@ -198,7 +198,7 @@ class PostgresBackend:
             FROM dw.fact_position_daily
             WHERE candidate_id = %(candidate_id)s AND fold = %(fold)s AND universe_id = %(universe_id)s
               AND date_value = %(date_value)s
-              AND (%(ticker)s IS NULL OR ticker = %(ticker)s)
+              AND (%(ticker)s::text IS NULL OR ticker = %(ticker)s::text)
             ORDER BY final_weight DESC NULLS LAST
             LIMIT 50
             """,
@@ -246,17 +246,17 @@ class PostgresBackend:
             measure_sql = "avg(module_active::int)"
         elif measure in {"drawdown", "exposure", "turnover"} or regime or "regime" in dimensions:
             table, date_col = "dw.fact_decision_state", "date_value"
-        horizon_cond = "AND (%(horizon)s IS NULL OR horizon = %(horizon)s)" if table == "dw.fact_outcome" else ""
+        horizon_cond = "AND (%(horizon)s::int IS NULL OR horizon = %(horizon)s::int)" if table == "dw.fact_outcome" else ""
         return self._query(
             f"""
             SELECT {dim_sql}, {measure_sql} AS "{measure}", count(*) AS observations
             FROM {table}
-            WHERE (%(candidate_id)s IS NULL OR candidate_id = %(candidate_id)s)
-              AND (%(fold)s IS NULL OR fold = %(fold)s)
-              AND (%(universe_id)s IS NULL OR universe_id = %(universe_id)s)
+            WHERE (%(candidate_id)s::text IS NULL OR candidate_id = %(candidate_id)s::text)
+              AND (%(fold)s::int IS NULL OR fold = %(fold)s::int)
+              AND (%(universe_id)s::text IS NULL OR universe_id = %(universe_id)s::text)
               {horizon_cond}
-              AND (%(start_date)s IS NULL OR {date_col} >= %(start_date)s::date)
-              AND (%(end_date)s IS NULL OR {date_col} <= %(end_date)s::date)
+              AND (%(start_date)s::date IS NULL OR {date_col} >= %(start_date)s::date)
+              AND (%(end_date)s::date IS NULL OR {date_col} <= %(end_date)s::date)
             GROUP BY {dim_sql}
             ORDER BY "{measure}" DESC NULLS LAST
             LIMIT %(limit)s
@@ -278,7 +278,7 @@ class PostgresBackend:
                 """
                 SELECT module_name, avg(activation_rate) AS activation_rate, sum(observations) AS observations
                 FROM mart.mv_module_effectiveness
-                WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s AND (%(fold)s IS NULL OR fold = %(fold)s)
+                WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s AND (%(fold)s::int IS NULL OR fold = %(fold)s::int)
                 GROUP BY module_name
                 ORDER BY activation_rate DESC NULLS LAST
                 """,
@@ -287,7 +287,7 @@ class PostgresBackend:
             "by_horizon": self._query(
                 """
                 SELECT * FROM mart.mv_module_effectiveness
-                WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s AND (%(fold)s IS NULL OR fold = %(fold)s)
+                WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s AND (%(fold)s::int IS NULL OR fold = %(fold)s::int)
                 ORDER BY module_name, horizon
                 """,
                 {"candidate_id": candidate_id, "universe_id": universe_id, "fold": fold},
@@ -299,7 +299,7 @@ class PostgresBackend:
         return self._query(
             """
             SELECT * FROM mart.mv_ticker_contribution
-            WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s AND (%(fold)s IS NULL OR fold = %(fold)s)
+            WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s AND (%(fold)s::int IS NULL OR fold = %(fold)s::int)
             ORDER BY total_pnl_contribution DESC NULLS LAST
             LIMIT %(limit)s
             """,
@@ -310,7 +310,7 @@ class PostgresBackend:
         return self._query(
             """
             SELECT * FROM mart.mv_regime_behavior
-            WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s AND (%(fold)s IS NULL OR fold = %(fold)s)
+            WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s AND (%(fold)s::int IS NULL OR fold = %(fold)s::int)
             ORDER BY observations DESC
             """,
             {"candidate_id": candidate_id, "universe_id": universe_id, "fold": fold},
@@ -320,9 +320,9 @@ class PostgresBackend:
         return self._query(
             """
             SELECT * FROM mart.mv_performance_by_fold
-            WHERE (%(candidate_id)s IS NULL OR candidate_id = %(candidate_id)s)
-              AND (%(universe_id)s IS NULL OR universe_id = %(universe_id)s)
-            ORDER BY fold, horizon
+            WHERE (%(candidate_id)s::text IS NULL OR candidate_id = %(candidate_id)s::text)
+              AND (%(universe_id)s::text IS NULL OR universe_id = %(universe_id)s::text)
+            ORDER BY fold, avg_alpha_vs_qqq DESC NULLS LAST
             """,
             {"candidate_id": candidate_id, "universe_id": universe_id},
         )
@@ -332,8 +332,8 @@ class PostgresBackend:
             """
             SELECT *
             FROM dw.fact_candidate_metric
-            WHERE (%(universe_id)s IS NULL OR universe_id = %(universe_id)s)
-              AND (%(candidates)s IS NULL OR candidate_id = ANY(%(candidates)s))
+            WHERE (%(universe_id)s::text IS NULL OR universe_id = %(universe_id)s::text)
+              AND (%(candidates)s::text[] IS NULL OR candidate_id = ANY(%(candidates)s::text[]))
             ORDER BY sharpe DESC NULLS LAST, cagr DESC NULLS LAST
             LIMIT 500
             """,
@@ -341,4 +341,23 @@ class PostgresBackend:
         )
 
     def query_performance(self):
-        return self._query("SELECT * FROM mart.mv_query_performance ORDER BY last_seen_at DESC NULLS LAST")
+        try:
+            return self._query(
+                """
+                SELECT
+                    endpoint,
+                    backend,
+                    source_relation,
+                    used_materialized_view,
+                    count(*) AS query_count,
+                    avg(elapsed_ms) AS avg_elapsed_ms,
+                    percentile_cont(0.95) WITHIN GROUP (ORDER BY elapsed_ms) AS p95_elapsed_ms,
+                    avg(rows_returned) AS avg_rows_returned,
+                    max(created_at) AS last_seen_at
+                FROM oltp.dss_query_log
+                GROUP BY endpoint, backend, source_relation, used_materialized_view
+                ORDER BY last_seen_at DESC NULLS LAST
+                """
+            )
+        except Exception:
+            return {"count": 0, "rows": []}

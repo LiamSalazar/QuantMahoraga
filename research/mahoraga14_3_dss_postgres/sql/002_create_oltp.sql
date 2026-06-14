@@ -37,24 +37,41 @@ CREATE TABLE IF NOT EXISTS oltp.artifact_inventory (
     required_flag BOOLEAN NOT NULL DEFAULT false,
     demo_mode BOOLEAN NOT NULL DEFAULT false,
     schema_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    phase TEXT,
     discovered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (run_id, relative_path)
 );
+
+ALTER TABLE oltp.artifact_inventory
+    ADD COLUMN IF NOT EXISTS phase TEXT;
 
 CREATE TABLE IF NOT EXISTS oltp.candidate_grid (
     candidate_grid_id BIGSERIAL PRIMARY KEY,
     run_id TEXT NOT NULL REFERENCES oltp.research_run(run_id),
     candidate_id TEXT NOT NULL,
     universe_id TEXT NOT NULL,
-    sweep_role TEXT NOT NULL,
+    sweep_role TEXT,
     budget_multiplier DOUBLE PRECISION,
     conviction_multiplier DOUBLE PRECISION,
     leader_multiplier DOUBLE PRECISION,
     backoff_strength DOUBLE PRECISION,
     source_artifact TEXT NOT NULL,
-    demo_mode BOOLEAN NOT NULL DEFAULT false,
-    UNIQUE (run_id, candidate_id, universe_id, sweep_role)
+    demo_mode BOOLEAN NOT NULL DEFAULT false
 );
+
+ALTER TABLE oltp.candidate_grid
+    DROP CONSTRAINT IF EXISTS candidate_grid_run_id_candidate_id_universe_id_sweep_role_key;
+
+ALTER TABLE oltp.candidate_grid
+    ALTER COLUMN sweep_role DROP NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uix_candidate_grid_scope
+    ON oltp.candidate_grid (
+        run_id,
+        candidate_id,
+        universe_id,
+        COALESCE(sweep_role, '__not_applicable__')
+    );
 
 CREATE TABLE IF NOT EXISTS oltp.simulation_job (
     simulation_job_id BIGSERIAL PRIMARY KEY,

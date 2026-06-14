@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS dw.fact_outcome (
 CREATE TABLE IF NOT EXISTS dw.fact_candidate_metric (
     candidate_id TEXT NOT NULL,
     universe_id TEXT NOT NULL,
-    sweep_role TEXT NOT NULL,
+    sweep_role TEXT,
     metric_set TEXT NOT NULL,
     cagr DOUBLE PRECISION,
     sharpe DOUBLE PRECISION,
@@ -142,14 +142,28 @@ CREATE TABLE IF NOT EXISTS dw.fact_candidate_metric (
     return_per_exposure DOUBLE PRECISION,
     robust_region_flag BOOLEAN,
     run_id TEXT NOT NULL,
-    demo_mode BOOLEAN NOT NULL DEFAULT false,
-    PRIMARY KEY (candidate_id, universe_id, sweep_role, metric_set, run_id)
+    demo_mode BOOLEAN NOT NULL DEFAULT false
 );
+
+ALTER TABLE dw.fact_candidate_metric
+    DROP CONSTRAINT IF EXISTS fact_candidate_metric_pkey;
+
+ALTER TABLE dw.fact_candidate_metric
+    ALTER COLUMN sweep_role DROP NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uix_fact_candidate_metric_scope
+    ON dw.fact_candidate_metric (
+        candidate_id,
+        universe_id,
+        COALESCE(sweep_role, '__not_applicable__'),
+        metric_set,
+        run_id
+    );
 
 CREATE TABLE IF NOT EXISTS dw.fact_robustness_surface (
     candidate_id TEXT NOT NULL,
     universe_id TEXT NOT NULL,
-    sweep_role TEXT NOT NULL,
+    sweep_role TEXT,
     budget_multiplier DOUBLE PRECISION,
     conviction_multiplier DOUBLE PRECISION,
     leader_multiplier DOUBLE PRECISION,
@@ -163,6 +177,9 @@ CREATE TABLE IF NOT EXISTS dw.fact_robustness_surface (
     run_id TEXT NOT NULL,
     demo_mode BOOLEAN NOT NULL DEFAULT false
 );
+
+ALTER TABLE dw.fact_robustness_surface
+    ALTER COLUMN sweep_role DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS dw.fact_cost_sensitivity (
     candidate_id TEXT NOT NULL,
