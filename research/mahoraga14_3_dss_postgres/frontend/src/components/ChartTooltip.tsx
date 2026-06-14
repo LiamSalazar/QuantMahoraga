@@ -67,8 +67,16 @@ export function ChartTooltip({ active, payload, label }: { active?: boolean; pay
   return (
     <div className="chart-tooltip">
       <strong>{formatLabel(label, row)}</strong>
+      {row.scenario_type ? <span>Scenario type: {formatText(row.scenario_type)}</span> : null}
+      {row.scenario_id ? <small>{formatText(row.scenario_id)}</small> : null}
       {row.ticker ? <span>Ticker: {formatText(row.ticker)}</span> : null}
       {row.candidate_id || row.CandidateId ? <small>{formatText(row.candidate_id ?? row.CandidateId)}</small> : null}
+      {row.budget_multiplier !== undefined ? <span>Budget: <b>{formatMetric(row.budget_multiplier, "ratio")}</b></span> : null}
+      {row.conviction_multiplier !== undefined ? <span>Conviction: <b>{formatMetric(row.conviction_multiplier, "ratio")}</b></span> : null}
+      {row.leader_multiplier !== undefined ? <span>Leader: <b>{formatMetric(row.leader_multiplier, "ratio")}</b></span> : null}
+      {row.backoff_strength !== undefined ? <span>Backoff: <b>{formatMetric(row.backoff_strength, "ratio")}</b></span> : null}
+      {row.cost_bps !== undefined ? <span>Cost: <b>{formatText(row.cost_bps)} bps</b></span> : null}
+      {row.slippage_bps !== undefined ? <span>Slippage: <b>{formatText(row.slippage_bps)} bps</b></span> : null}
       {entries.map((item) => {
         const key = String(item.dataKey ?? item.name ?? "");
         return (

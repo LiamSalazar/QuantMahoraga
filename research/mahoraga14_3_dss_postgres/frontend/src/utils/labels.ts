@@ -1,7 +1,7 @@
 import { formatAlpha, formatDrawdown, formatMetric, formatNumber, formatPercent } from "./format";
 
 export const OFFICIAL_CANDIDATE_ID = "B1.05_C1.10_L1.10_R1.05";
-export const OFFICIAL_LABEL = "Official Baseline — Mahoraga 14.3R ROBUST_MAIN";
+export const OFFICIAL_LABEL = "Official Baseline - Mahoraga 14.3R ROBUST_MAIN";
 
 export function isOfficialCandidate(candidateId?: unknown): boolean {
   return candidateId === OFFICIAL_CANDIDATE_ID;
@@ -13,7 +13,7 @@ function parseCandidate(candidateId: string): Record<string, string> | null {
 }
 
 export function formatCandidateLabel(candidateId?: unknown): string {
-  if (typeof candidateId !== "string" || !candidateId) return "—";
+  if (typeof candidateId !== "string" || !candidateId) return "No candidate";
   if (isOfficialCandidate(candidateId)) return OFFICIAL_LABEL;
   if (candidateId === "EXTREME_pro-risk") return "Extreme: pro-risk";
   if (candidateId === "EXTREME_pro-defense") return "Extreme: pro-defense";
@@ -26,7 +26,7 @@ export function formatCandidateLabel(candidateId?: unknown): string {
 
 export function formatUniverseLabel(universeId?: unknown): string {
   if (universeId === "base_universe_12") return "base_universe_12 · official 12-name technology universe";
-  return typeof universeId === "string" ? universeId.replaceAll("_", " ") : "—";
+  return typeof universeId === "string" ? universeId.replaceAll("_", " ") : "No universe";
 }
 
 export function formatDemoMode(value?: unknown): string {

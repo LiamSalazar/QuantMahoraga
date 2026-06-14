@@ -64,6 +64,7 @@ export default function DecisionReplay({ options }: { options: Options | null })
     return ["auto", ...Array.from(new Set(values))];
   }, [cases, completeCases]);
   const tickerOptions = useMemo(() => ["all", ...availableTickers.map((row) => String(row.ticker)).filter(Boolean)], [availableTickers]);
+  const metricKeys = useMemo(() => ["fold", "regime", "participation_state", "expected_exposure", "expected_turnover", "drawdown", "hard_backoff_flag", "leader_blend"].filter((key) => decision?.[key] !== null && decision?.[key] !== undefined && decision?.[key] !== ""), [decision]);
 
   useEffect(() => {
     if (ticker !== "all" && !tickerOptions.includes(ticker)) setTicker("all");
@@ -108,7 +109,7 @@ export default function DecisionReplay({ options }: { options: Options | null })
           <>
             <h3>{formatCandidateLabel(decision.candidate_id)} <small>{formatDate(decision.date_value)}</small></h3>
             <div className="metric-grid">
-              {["fold", "regime", "participation_state", "expected_exposure", "expected_turnover", "drawdown", "hard_backoff_flag", "leader_blend"].map((key) => <MetricCard key={key} label={key.replaceAll("_", " ")} value={formatMetric(decision[key], key)} />)}
+              {metricKeys.map((key) => <MetricCard key={key} label={key.replaceAll("_", " ")} value={formatMetric(decision[key], key)} />)}
             </div>
           </>
         ) : <EmptyState title="No decision found" detail="Reset filters or choose a broader fold slice." />}

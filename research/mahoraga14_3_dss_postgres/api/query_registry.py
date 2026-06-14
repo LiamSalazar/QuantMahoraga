@@ -24,7 +24,12 @@ QUESTIONS = [
     {"id": "decision-worst-20d", "question": "Worst decisions by 20d outcome.", "endpoint": "/research/decision-casebook", "facts": ["mart.mv_decision_outcome"], "operations": ["drill-through"]},
     {"id": "decision-high-exposure-bad", "question": "High exposure with bad outcome.", "endpoint": "/research/decision-casebook", "facts": ["dw.fact_decision_state", "dw.fact_outcome"], "operations": ["dice"]},
     {"id": "decision-backoff-positive", "question": "Backoff decisions with positive outcome.", "endpoint": "/research/decision-casebook", "facts": ["dw.fact_decision_state", "dw.fact_outcome"], "operations": ["slice"]},
+    {"id": "outcome-percentiles-horizon", "question": "Outcome percentiles by horizon.", "endpoint": "/research/distributions", "facts": ["dw.fact_outcome"], "operations": ["roll-up"]},
+    {"id": "exposure-buckets-outcome", "question": "Exposure buckets vs outcome.", "endpoint": "/research/distributions", "facts": ["dw.fact_decision_state", "dw.fact_outcome"], "operations": ["dice"]},
+    {"id": "turnover-buckets-outcome", "question": "Turnover buckets vs outcome.", "endpoint": "/research/cohorts", "facts": ["dw.fact_decision_state", "dw.fact_outcome"], "operations": ["dice"]},
+    {"id": "drawdown-distribution-regime", "question": "Drawdown distribution by regime/fold.", "endpoint": "/research/cohorts", "facts": ["dw.fact_decision_state"], "operations": ["roll-up"]},
     {"id": "engineering-slowest-endpoint", "question": "Which endpoint is slowest?", "endpoint": "/data/execution-evidence", "facts": ["oltp.dss_query_log"], "operations": ["roll-up"]},
+    {"id": "engineering-highest-p95", "question": "Which endpoint has highest p95?", "endpoint": "/data/execution-evidence", "facts": ["oltp.dss_query_log"], "operations": ["roll-up"]},
     {"id": "engineering-source-most-used", "question": "Which source relation is used most?", "endpoint": "/data/execution-evidence", "facts": ["oltp.dss_query_log"], "operations": ["roll-up"]},
     {"id": "engineering-useful-mart", "question": "Which mart supports the most useful DSS view?", "endpoint": "/data/execution-evidence", "facts": ["mart materialized views"], "operations": ["drill-through"]},
 ]

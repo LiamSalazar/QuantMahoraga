@@ -16,11 +16,13 @@ export function DataTable({
   columns,
   pageSize = 12,
   rowAction,
+  rowClassName,
 }: {
   rows: Row[];
   columns?: string[];
   pageSize?: number;
   rowAction?: (row: Row) => ReactNode;
+  rowClassName?: (row: Row) => string;
 }) {
   const [page, setPage] = useState(0);
   const cleanRows = useMemo(() => rows.filter((row) => Object.values(row).some(hasValue)), [rows]);
@@ -45,7 +47,7 @@ export function DataTable({
         </thead>
         <tbody>
           {pageRows.map((row, index) => (
-            <tr key={index}>
+            <tr key={index} className={rowClassName ? rowClassName(row) : undefined}>
               {visibleColumns.map((column) => (
                 <td key={column} title={String(row[column] ?? "")}>
                   {column.toLowerCase().includes("candidate") ? (

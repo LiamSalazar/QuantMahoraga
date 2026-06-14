@@ -10,6 +10,16 @@ import type { HealthSummary, Row } from "../api/types";
 import { formatMetric, formatNumber, formatText } from "../utils/format";
 import { rowsFrom } from "../utils/rows";
 
+function ms(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${n.toFixed(1)} ms` : "No latency";
+}
+
+function shortRunId(value: unknown) {
+  const text = String(value ?? "No run id");
+  return text.length > 22 ? `${text.slice(0, 22)}...` : text;
+}
+
 export default function DataEngineering() {
   const health = useApiResource<HealthSummary>("/data/health-summary", undefined, true, false);
   const evidence = useApiResource<Record<string, unknown>>("/data/execution-evidence", undefined, true, false);
@@ -24,6 +34,7 @@ export default function DataEngineering() {
   const avgLatency = rows.reduce((sum, row) => sum + Number(row.avg_elapsed_ms ?? 0), 0) / Math.max(1, rows.length);
   const p95Latency = Math.max(...rows.map((row) => Number(row.p95_elapsed_ms ?? 0)), 0);
   const slowest = evidence.data?.slowest_endpoint as Row | undefined;
+  const highestP95 = evidence.data?.highest_p95_endpoint as Row | undefined;
   const fastest = evidence.data?.fastest_endpoint as Row | undefined;
   const mostUsed = evidence.data?.most_used_endpoint as Row | undefined;
   const mostSource = evidence.data?.most_used_source_relation as Row | undefined;
@@ -34,17 +45,19 @@ export default function DataEngineering() {
       <section className="panel span-12">
         <SectionHeader title="Data Engineering" question="What execution evidence supports the DSS?" source="OLTP + DW + mart materialized views + query logs" />
         <div className="metric-grid">
-          <MetricCard label="Backend active" value={health.data?.backend ?? "—"} detail={health.data?.profile ?? "profile"} />
-          <MetricCard label="Latest run_id" value={String(evidence.data?.latest_run_id ?? health.data?.latest_run_id ?? "—")} />
+          <MetricCard label="Backend active" value={health.data?.backend ?? "No backend"} />
+          <MetricCard label="Latest run_id" value={shortRunId(evidence.data?.latest_run_id ?? health.data?.latest_run_id)} detail={String(evidence.data?.latest_run_id ?? health.data?.latest_run_id ?? "")} />
           <MetricCard label="Validation" value={formatText(evidence.data?.validation_status ?? health.data?.validation_passed)} />
+          <MetricCard label="Logical rows" value={formatNumber(health.data?.logical_counts?.total_rows, 0)} />
           <MetricCard label="OLTP tables loaded" value={formatNumber(evidence.data?.oltp_tables_loaded, 0)} />
           <MetricCard label="DW facts loaded" value={formatNumber(evidence.data?.dw_facts_loaded, 0)} />
           <MetricCard label="Marts loaded" value={formatNumber(evidence.data?.marts_loaded, 0)} />
           <MetricCard label="Real rows" value={formatNumber(evidence.data?.real_rows ?? health.data?.real_rows, 0)} />
           <MetricCard label="Simulated what-if rows" value={formatNumber(evidence.data?.simulated_whatif_rows ?? health.data?.simulated_rows, 0)} />
           <MetricCard label="Query logs active" value={formatText(evidence.data?.query_logs_active ?? health.data?.query_logs_active)} />
+          <MetricCard label="Query log rows" value={formatNumber(health.data?.query_log_count, 0)} />
           <MetricCard label="Materialized views" value={formatNumber(evidence.data?.materialized_views_count, 0)} />
-          <MetricCard label="Most used source" value={String(mostSource?.source_relation ?? "—")} detail={formatMetric(mostSource?.query_count, "count")} />
+          <MetricCard label="Most used source" value={String(mostSource?.source_relation ?? "No source")} detail={formatMetric(mostSource?.query_count, "count")} />
         </div>
       </section>
 
@@ -54,11 +67,12 @@ export default function DataEngineering() {
         <SectionHeader title="Query Performance Summary" question="Aggregated evidence from active DSS endpoint logs." source="oltp.dss_query_log" />
         <div className="metric-grid">
           <MetricCard label="Total queries" value={formatNumber(totalQueries, 0)} />
-          <MetricCard label="Avg latency" value={formatMetric(avgLatency, "milliseconds")} detail="milliseconds" />
-          <MetricCard label="P95 latency" value={formatMetric(p95Latency, "milliseconds")} detail="milliseconds" />
-          <MetricCard label="Slowest endpoint" value={String(slowest?.endpoint ?? "—")} detail={formatMetric(slowest?.avg_elapsed_ms, "milliseconds")} />
-          <MetricCard label="Fastest endpoint" value={String(fastest?.endpoint ?? "—")} detail={formatMetric(fastest?.avg_elapsed_ms, "milliseconds")} />
-          <MetricCard label="Most queried endpoint" value={String(mostUsed?.endpoint ?? "—")} detail={formatMetric(mostUsed?.query_count, "count")} />
+          <MetricCard label="Avg latency" value={ms(avgLatency)} />
+          <MetricCard label="P95 latency" value={ms(p95Latency)} />
+          <MetricCard label="Slowest avg endpoint" value={String(slowest?.endpoint ?? "No endpoint")} detail={ms(slowest?.avg_elapsed_ms)} />
+          <MetricCard label="Highest p95 endpoint" value={String(highestP95?.endpoint ?? "No endpoint")} detail={ms(highestP95?.p95_elapsed_ms)} />
+          <MetricCard label="Fastest endpoint" value={String(fastest?.endpoint ?? "No endpoint")} detail={ms(fastest?.avg_elapsed_ms)} />
+          <MetricCard label="Most queried endpoint" value={String(mostUsed?.endpoint ?? "No endpoint")} detail={formatMetric(mostUsed?.query_count, "count")} />
         </div>
       </section>
 

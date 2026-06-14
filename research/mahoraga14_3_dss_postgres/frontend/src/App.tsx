@@ -33,7 +33,7 @@ function ActiveView({ active, options, setActive }: { active: ViewKey; options: 
     case "tickers":
       return <TickerContribution options={options} onOpenView={setActive} />;
     case "regimes":
-      return <RegimeAnalysis options={options} />;
+      return <RegimeAnalysis options={options} onOpenView={setActive} />;
     case "olap":
       return <OLAPExplorer options={options} onOpenView={setActive} />;
     case "engineering":

@@ -146,12 +146,12 @@ export default function CommandCenter({ options, onOpenView }: { options: Option
         <SectionHeader title="Top Wins / Top Drags" question="Compact data-mined anchors for further investigation." source="marts over folds, tickers, modules, regimes and candidates" />
         <div className="metric-grid">
           <MetricCard label="Best fold" value={formatMetric(foldBW.best?.fold, "fold")} detail={formatMetric(foldBW.best?.avg_alpha_vs_qqq, "alpha")} />
-          <MetricCard label="Best ticker contributor" value={String(tickerBW.best?.ticker ?? "—")} detail={formatMetric(tickerBW.best?.total_pnl_contribution, "return")} />
-          <MetricCard label="Best module/horizon" value={String(moduleBW.best?.module_name ?? "—")} detail={`H${String(moduleBW.best?.horizon ?? "—")} · ${formatMetric(moduleBW.best?.helped_rate, "rate")}`} />
+          <MetricCard label="Best ticker contributor" value={String(tickerBW.best?.ticker ?? "No ticker")} detail={formatMetric(tickerBW.best?.total_pnl_contribution, "return")} />
+          <MetricCard label="Best module/horizon" value={String(moduleBW.best?.module_name ?? "No module")} detail={`H${String(moduleBW.best?.horizon ?? "No horizon")} · ${formatMetric(moduleBW.best?.helped_rate, "rate")}`} />
           <MetricCard label="Best observed candidate" value={formatCandidateLabel(candidateBW.best?.candidate_id)} detail={formatMetric(candidateBW.best?.sharpe, "Sharpe")} />
           <MetricCard label="Worst fold" value={formatMetric(foldBW.worst?.fold, "fold")} detail={formatMetric(foldBW.worst?.avg_alpha_vs_qqq, "alpha")} />
-          <MetricCard label="Largest drag ticker" value={String(tickerBW.worst?.ticker ?? "—")} detail={formatMetric(tickerBW.worst?.total_pnl_contribution, "return")} />
-          <MetricCard label="Weakest regime" value={String(regimeBW.worst?.regime ?? "—")} detail={formatMetric(regimeBW.worst?.avg_net_return, "return")} />
+          <MetricCard label="Largest drag ticker" value={String(tickerBW.worst?.ticker ?? "No ticker")} detail={formatMetric(tickerBW.worst?.total_pnl_contribution, "return")} />
+          <MetricCard label="Weakest regime" value={String(regimeBW.worst?.regime ?? "No regime")} detail={formatMetric(regimeBW.worst?.avg_net_return, "return")} />
           <MetricCard label="Worst observed candidate" value={formatCandidateLabel(candidateBW.worst?.candidate_id)} detail={formatMetric(candidateBW.worst?.sharpe, "Sharpe")} />
         </div>
       </section>

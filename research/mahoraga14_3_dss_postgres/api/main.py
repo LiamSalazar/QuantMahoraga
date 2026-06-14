@@ -124,6 +124,7 @@ def execution_evidence() -> dict:
         "simulated_whatif_rows": int(summary.get("demo_rows_written") or 0),
         "query_logs_active": bool(perf_rows),
         "slowest_endpoint": max(perf_rows, key=lambda row: float(row.get("avg_elapsed_ms") or 0), default=None),
+        "highest_p95_endpoint": max(perf_rows, key=lambda row: float(row.get("p95_elapsed_ms") or 0), default=None),
         "fastest_endpoint": min(perf_rows, key=lambda row: float(row.get("avg_elapsed_ms") or 10**9), default=None),
         "most_used_endpoint": max(perf_rows, key=lambda row: int(row.get("query_count") or 0), default=None),
         "most_used_source_relation": max(source_rows, key=lambda row: int(row.get("query_count") or 0), default=None),
@@ -240,6 +241,55 @@ def research_robustness_compare(universe_id: str = OFFICIAL_UNIVERSE_ID) -> dict
     if not hasattr(backend, "robustness_compare"):
         return {"count": 0, "rows": []}
     return _timed("/research/robustness-compare", "mart.mv_scorecard_candidate", lambda: backend.robustness_compare(universe_id))
+
+
+@app.get("/research/distributions")
+def research_distributions(
+    candidate_id: str = OFFICIAL_CANDIDATE_ID,
+    universe_id: str = OFFICIAL_UNIVERSE_ID,
+    fold: int | None = None,
+) -> dict:
+    _validate(candidate_id, "candidates", "candidate")
+    _validate(universe_id, "universes", "universe")
+    if fold is not None:
+        _validate(fold, "folds", "fold")
+    if not hasattr(backend, "research_distributions"):
+        return {"outcome_percentiles": [], "decision_percentiles": [], "exposure_buckets": []}
+    return _timed("/research/distributions", "dw.fact_outcome+dw.fact_decision_state", lambda: backend.research_distributions(candidate_id, universe_id, fold))
+
+
+@app.get("/research/cohorts")
+def research_cohorts(
+    candidate_id: str = OFFICIAL_CANDIDATE_ID,
+    universe_id: str = OFFICIAL_UNIVERSE_ID,
+    fold: int | None = None,
+) -> dict:
+    _validate(candidate_id, "candidates", "candidate")
+    _validate(universe_id, "universes", "universe")
+    if fold is not None:
+        _validate(fold, "folds", "fold")
+    if not hasattr(backend, "research_cohorts"):
+        return {"count": 0, "rows": []}
+    return _timed("/research/cohorts", "dw.fact_decision_state+dw.fact_outcome", lambda: backend.research_cohorts(candidate_id, universe_id, fold))
+
+
+@app.get("/research/whatif-reference")
+def research_whatif_reference(
+    candidate_id: str = OFFICIAL_CANDIDATE_ID,
+    universe_id: str = OFFICIAL_UNIVERSE_ID,
+    fold: int | None = 1,
+    horizon: int = 20,
+    cost_bps: float | None = 5.0,
+    slippage_bps: float | None = 2.0,
+) -> dict:
+    _validate(candidate_id, "candidates", "candidate")
+    _validate(universe_id, "universes", "universe")
+    if fold is not None:
+        _validate(fold, "folds", "fold")
+    _validate(horizon, "horizons", "horizon")
+    if not hasattr(backend, "whatif_reference"):
+        return {"official": None, "best_simulated": None, "best_observed": None}
+    return _timed("/research/whatif-reference", "mart.mv_scorecard_candidate+mart.mv_whatif_grid", lambda: backend.whatif_reference(candidate_id, universe_id, fold, horizon, cost_bps, slippage_bps))
 
 
 @app.get("/research/olap-preset")

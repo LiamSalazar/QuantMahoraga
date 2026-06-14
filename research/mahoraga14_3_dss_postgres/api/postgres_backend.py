@@ -215,6 +215,204 @@ class PostgresBackend:
         pareto = [row for row in clean_rows if (row.get("cagr") or 0) > 0 and (row.get("maxdd") or -999) > -30][:80]
         return {"count": len(clean_rows), "rows": clean_rows, "pareto": pareto, "demo_rows": sum(1 for row in clean_rows if row.get("demo_mode")), "available": options[0] if options else {}}
 
+    def whatif_reference(self, candidate_id, universe_id, fold, horizon, cost_bps, slippage_bps):
+        params = {"candidate_id": candidate_id, "universe_id": universe_id, "fold": fold, "horizon": horizon, "cost_bps": cost_bps, "slippage_bps": slippage_bps}
+        official = self._query(
+            """
+            SELECT candidate_id, cagr, sharpe, sortino, maxdd, alpha_qqq, avg_exposure, avg_turnover, false AS demo_mode
+            FROM mart.mv_scorecard_candidate
+            WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s
+            LIMIT 1
+            """,
+            params,
+        )["rows"]
+        best_observed = self._query(
+            """
+            SELECT candidate_id, cagr, sharpe, sortino, maxdd, alpha_qqq, avg_exposure, avg_turnover, false AS demo_mode
+            FROM mart.mv_scorecard_candidate
+            WHERE universe_id = %(universe_id)s
+            ORDER BY sharpe DESC NULLS LAST, cagr DESC NULLS LAST
+            LIMIT 1
+            """,
+            params,
+        )["rows"]
+        best_simulated = self._query(
+            """
+            SELECT *
+            FROM mart.mv_whatif_grid
+            WHERE candidate_id = %(candidate_id)s
+              AND universe_id = %(universe_id)s
+              AND (%(fold)s::int IS NULL OR fold = %(fold)s::int)
+              AND horizon = %(horizon)s
+              AND (%(cost_bps)s::double precision IS NULL OR cost_bps = %(cost_bps)s::double precision)
+              AND (%(slippage_bps)s::double precision IS NULL OR slippage_bps = %(slippage_bps)s::double precision)
+              AND cagr IS NOT NULL AND sharpe IS NOT NULL AND maxdd IS NOT NULL
+            ORDER BY robust_score DESC NULLS LAST, sharpe DESC NULLS LAST
+            LIMIT 1
+            """,
+            params,
+        )["rows"]
+        return {"official": official[0] if official else None, "best_observed": best_observed[0] if best_observed else None, "best_simulated": best_simulated[0] if best_simulated else None}
+
+    def research_distributions(self, candidate_id, universe_id, fold):
+        params = {"candidate_id": candidate_id, "universe_id": universe_id, "fold": fold}
+        outcome_percentiles = self._query(
+            """
+            SELECT
+                horizon,
+                count(*) AS observations,
+                avg(realized_return) AS avg_outcome,
+                percentile_cont(0.05) WITHIN GROUP (ORDER BY realized_return) AS p5_outcome,
+                percentile_cont(0.25) WITHIN GROUP (ORDER BY realized_return) AS p25_outcome,
+                percentile_cont(0.50) WITHIN GROUP (ORDER BY realized_return) AS median_outcome,
+                percentile_cont(0.75) WITHIN GROUP (ORDER BY realized_return) AS p75_outcome,
+                percentile_cont(0.95) WITHIN GROUP (ORDER BY realized_return) AS p95_outcome,
+                avg(helped_flag::int) AS helped_rate,
+                avg(alpha_vs_qqq) AS avg_alpha_vs_qqq,
+                avg(alpha_vs_spy) AS avg_alpha_vs_spy
+            FROM dw.fact_outcome
+            WHERE candidate_id = %(candidate_id)s
+              AND universe_id = %(universe_id)s
+              AND (%(fold)s::int IS NULL OR fold = %(fold)s::int)
+              AND realized_return IS NOT NULL
+            GROUP BY horizon
+            ORDER BY horizon
+            """,
+            params,
+        )["rows"]
+        decision_percentiles = self._query(
+            """
+            WITH metrics AS (
+                SELECT 'Exposure' AS metric, expected_exposure AS value FROM dw.fact_decision_state
+                WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s AND (%(fold)s::int IS NULL OR fold = %(fold)s::int) AND expected_exposure IS NOT NULL
+                UNION ALL
+                SELECT 'Turnover', expected_turnover FROM dw.fact_decision_state
+                WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s AND (%(fold)s::int IS NULL OR fold = %(fold)s::int) AND expected_turnover IS NOT NULL
+                UNION ALL
+                SELECT 'Drawdown', drawdown FROM dw.fact_decision_state
+                WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s AND (%(fold)s::int IS NULL OR fold = %(fold)s::int) AND drawdown IS NOT NULL
+            )
+            SELECT
+                metric,
+                count(*) AS observations,
+                avg(value) AS average,
+                percentile_cont(0.05) WITHIN GROUP (ORDER BY value) AS p5,
+                percentile_cont(0.25) WITHIN GROUP (ORDER BY value) AS p25,
+                percentile_cont(0.50) WITHIN GROUP (ORDER BY value) AS median,
+                percentile_cont(0.75) WITHIN GROUP (ORDER BY value) AS p75,
+                percentile_cont(0.95) WITHIN GROUP (ORDER BY value) AS p95
+            FROM metrics
+            GROUP BY metric
+            ORDER BY metric
+            """,
+            params,
+        )["rows"]
+        exposure_buckets = self._query(
+            """
+            WITH joined AS (
+                SELECT
+                    CASE
+                        WHEN d.expected_exposure < 0.50 THEN 'Low exposure'
+                        WHEN d.expected_exposure < 0.80 THEN 'Mid exposure'
+                        ELSE 'High exposure'
+                    END AS bucket,
+                    o.realized_return,
+                    o.alpha_vs_qqq,
+                    o.helped_flag,
+                    d.expected_exposure,
+                    d.drawdown
+                FROM dw.fact_decision_state d
+                JOIN dw.fact_outcome o
+                  ON o.decision_date = d.date_value
+                 AND o.candidate_id = d.candidate_id
+                 AND o.fold = d.fold
+                 AND o.universe_id = d.universe_id
+                WHERE d.candidate_id = %(candidate_id)s
+                  AND d.universe_id = %(universe_id)s
+                  AND (%(fold)s::int IS NULL OR d.fold = %(fold)s::int)
+                  AND o.horizon = 20
+                  AND d.expected_exposure IS NOT NULL
+                  AND o.realized_return IS NOT NULL
+            )
+            SELECT
+                bucket,
+                count(*) AS observations,
+                avg(realized_return) AS avg_outcome,
+                percentile_cont(0.50) WITHIN GROUP (ORDER BY realized_return) AS median_outcome,
+                percentile_cont(0.05) WITHIN GROUP (ORDER BY realized_return) AS p5_outcome,
+                percentile_cont(0.95) WITHIN GROUP (ORDER BY realized_return) AS p95_outcome,
+                avg(helped_flag::int) AS helped_rate,
+                avg(alpha_vs_qqq) AS avg_alpha_vs_qqq,
+                avg(expected_exposure) AS avg_exposure,
+                avg(drawdown) AS avg_drawdown
+            FROM joined
+            GROUP BY bucket
+            ORDER BY avg_exposure
+            """,
+            params,
+        )["rows"]
+        return {"outcome_percentiles": outcome_percentiles, "decision_percentiles": decision_percentiles, "exposure_buckets": exposure_buckets}
+
+    def research_cohorts(self, candidate_id, universe_id, fold):
+        params = {"candidate_id": candidate_id, "universe_id": universe_id, "fold": fold}
+        rows = self._query(
+            """
+            WITH joined AS (
+                SELECT
+                    d.fold,
+                    d.regime,
+                    d.participation_state,
+                    d.backoff_flag,
+                    d.leader_blend,
+                    d.expected_exposure,
+                    d.expected_turnover,
+                    d.drawdown,
+                    o.horizon,
+                    o.realized_return,
+                    o.alpha_vs_qqq,
+                    o.helped_flag
+                FROM dw.fact_decision_state d
+                JOIN dw.fact_outcome o
+                  ON o.decision_date = d.date_value
+                 AND o.candidate_id = d.candidate_id
+                 AND o.fold = d.fold
+                 AND o.universe_id = d.universe_id
+                WHERE d.candidate_id = %(candidate_id)s
+                  AND d.universe_id = %(universe_id)s
+                  AND (%(fold)s::int IS NULL OR d.fold = %(fold)s::int)
+                  AND o.realized_return IS NOT NULL
+            ),
+            cohort_rows AS (
+                SELECT 'Backoff' AS cohort_type, CASE WHEN backoff_flag THEN 'Backoff active' ELSE 'Backoff inactive' END AS cohort, * FROM joined
+                UNION ALL SELECT 'Leader participation', CASE WHEN coalesce(leader_blend, 0) >= 0.20 THEN 'High leader blend' ELSE 'Low leader blend' END, * FROM joined
+                UNION ALL SELECT 'Exposure', CASE WHEN coalesce(expected_exposure, 0) >= 0.80 THEN 'High exposure' ELSE 'Low / mid exposure' END, * FROM joined
+                UNION ALL SELECT 'Turnover', CASE WHEN coalesce(expected_turnover, 0) >= 0.03 THEN 'High turnover' ELSE 'Low turnover' END, * FROM joined
+                UNION ALL SELECT 'Fold', 'Fold ' || fold::text, * FROM joined
+                UNION ALL SELECT 'Regime', coalesce(regime, 'Unlabeled regime'), * FROM joined
+                UNION ALL SELECT 'Participation state', coalesce(participation_state, 'Unlabeled state'), * FROM joined
+                UNION ALL SELECT 'Horizon', horizon::text || 'd horizon', * FROM joined
+            )
+            SELECT
+                cohort_type,
+                cohort,
+                count(*) AS observations,
+                avg(realized_return) AS avg_outcome,
+                percentile_cont(0.50) WITHIN GROUP (ORDER BY realized_return) AS median_outcome,
+                percentile_cont(0.05) WITHIN GROUP (ORDER BY realized_return) AS p5_outcome,
+                percentile_cont(0.95) WITHIN GROUP (ORDER BY realized_return) AS p95_outcome,
+                avg(helped_flag::int) AS helped_rate,
+                avg(alpha_vs_qqq) AS avg_alpha_vs_qqq,
+                avg(expected_exposure) AS avg_exposure,
+                avg(drawdown) AS avg_drawdown
+            FROM cohort_rows
+            GROUP BY cohort_type, cohort
+            HAVING count(*) >= 5
+            ORDER BY cohort_type, observations DESC
+            """,
+            params,
+        )["rows"]
+        return {"count": len(rows), "rows": rows}
+
     def decision_replay(self, candidate_id, fold, universe_id, date_value, ticker):
         params = {"candidate_id": candidate_id, "fold": fold, "universe_id": universe_id, "date_value": date_value, "ticker": ticker}
         decision_rows = self._query(
@@ -404,17 +602,39 @@ class PostgresBackend:
             "module-active-low-value": ("Which module activates often but adds little?", "dice", "mart.mv_module_effectiveness", "activation_rate", "module_name"),
             "ticker-top-contribution": ("Which tickers contribute most?", "drill-down", "mart.mv_ticker_contribution", "total_pnl_contribution", "ticker"),
             "ticker-largest-drags": ("Which tickers drag most?", "drill-down", "mart.mv_ticker_contribution", "total_pnl_contribution", "ticker"),
+            "ticker-selection-low-contribution": ("Which tickers are frequently selected but low contribution?", "dice", "mart.mv_ticker_contribution", "selection_rate", "ticker"),
             "ticker-frequent-leaders": ("Which tickers are frequent leaders?", "roll-up", "mart.mv_ticker_contribution", "leader_flag_rate", "ticker"),
             "regime-best-alpha": ("Which regime has the best alpha proxy?", "slice", "mart.mv_regime_behavior", "avg_net_return", "regime"),
             "regime-exposure-concentration": ("Where is exposure concentrated?", "slice", "mart.mv_regime_behavior", "avg_exposure", "regime"),
             "regime-backoff-most": ("Where does backoff activate most?", "slice", "mart.mv_regime_behavior", "backoff_activation_rate", "regime"),
+            "regime-weakest-outcome": ("Which regime has weakest average outcome?", "slice", "mart.mv_regime_behavior", "avg_net_return", "regime"),
             "decision-best-20d": ("Best decisions by 20d outcome.", "drill-through", "mart.mv_decision_outcome", "realized_return", "date_value"),
             "decision-worst-20d": ("Worst decisions by 20d outcome.", "drill-through", "mart.mv_decision_outcome", "realized_return", "date_value"),
+            "decision-high-exposure-bad": ("High exposure with bad outcome.", "dice", "mart.mv_decision_outcome", "expected_exposure", "date_value"),
+            "decision-backoff-positive": ("Backoff decisions with positive outcome.", "slice", "mart.mv_decision_outcome", "realized_return", "date_value"),
+            "outcome-percentiles-horizon": ("Outcome percentiles by horizon.", "roll-up", "research.distributions", "median_outcome", "horizon"),
+            "exposure-buckets-outcome": ("Exposure buckets vs outcome.", "dice", "research.distributions", "median_outcome", "bucket"),
+            "turnover-buckets-outcome": ("Turnover buckets vs outcome.", "dice", "research.cohorts", "median_outcome", "cohort"),
+            "drawdown-distribution-regime": ("Drawdown distribution by regime/fold.", "roll-up", "research.cohorts", "avg_drawdown", "cohort"),
             "engineering-slowest-endpoint": ("Which endpoint is slowest?", "roll-up", "oltp.dss_query_log", "avg_elapsed_ms", "endpoint"),
+            "engineering-highest-p95": ("Which endpoint has highest p95?", "roll-up", "oltp.dss_query_log", "p95_elapsed_ms", "endpoint"),
             "engineering-source-most-used": ("Which source relation is used most?", "roll-up", "oltp.dss_query_log", "query_count", "source_relation"),
         }
         question, operation, source, measure, dimension = presets.get(preset_id, presets["fold-best-performance"])
         params = {"candidate_id": candidate_id, "universe_id": universe_id, "fold": fold, "limit": limit}
+        if source == "research.distributions":
+            payload = self.research_distributions(candidate_id, universe_id, fold)
+            rows = payload["exposure_buckets"] if preset_id == "exposure-buckets-outcome" else payload["outcome_percentiles"]
+            rows = [row for row in rows if row.get(measure) is not None]
+            return {"preset_id": preset_id, "question": question, "operation": operation, "source": source, "measure": measure, "dimension": dimension, "count": len(rows), "rows": rows}
+        if source == "research.cohorts":
+            rows = [
+                row for row in self.research_cohorts(candidate_id, universe_id, fold)["rows"]
+                if (preset_id == "turnover-buckets-outcome" and row.get("cohort_type") == "Turnover")
+                or (preset_id == "drawdown-distribution-regime" and row.get("cohort_type") in {"Regime", "Fold"})
+            ]
+            rows = [row for row in rows if row.get(measure) is not None]
+            return {"preset_id": preset_id, "question": question, "operation": operation, "source": source, "measure": measure, "dimension": dimension, "count": len(rows), "rows": rows}
         sql_by_source = {
             "mart.mv_performance_by_fold": """
                 SELECT fold, avg(avg_realized_return) AS avg_realized_return, avg(avg_alpha_vs_qqq) AS avg_alpha_vs_qqq,
@@ -436,15 +656,21 @@ class PostgresBackend:
                 GROUP BY module_name, horizon
             """,
             "mart.mv_ticker_contribution": """
-                SELECT ticker, total_pnl_contribution, avg_final_weight, selection_rate, leader_flag_rate, observations
+                SELECT ticker, sum(total_pnl_contribution) AS total_pnl_contribution, avg(avg_final_weight) AS avg_final_weight,
+                       avg(selection_rate) AS selection_rate, avg(leader_flag_rate) AS leader_flag_rate, sum(observations) AS observations
                 FROM mart.mv_ticker_contribution
                 WHERE candidate_id=%(candidate_id)s AND universe_id=%(universe_id)s AND (%(fold)s::int IS NULL OR fold=%(fold)s::int)
+                GROUP BY ticker
             """,
             "mart.mv_regime_behavior": """
-                SELECT regime, avg_net_return, avg_benchmark_return, avg_exposure, avg_drawdown, backoff_activation_rate,
-                       continuation_activation_rate, avg_leader_blend, observations
+                SELECT regime, avg(avg_net_return) AS avg_net_return, avg(avg_benchmark_return) AS avg_benchmark_return,
+                       avg(avg_exposure) AS avg_exposure, avg(avg_drawdown) AS avg_drawdown,
+                       avg(backoff_activation_rate) AS backoff_activation_rate,
+                       avg(continuation_activation_rate) AS continuation_activation_rate, avg(avg_leader_blend) AS avg_leader_blend,
+                       sum(observations) AS observations
                 FROM mart.mv_regime_behavior
                 WHERE candidate_id=%(candidate_id)s AND universe_id=%(universe_id)s AND (%(fold)s::int IS NULL OR fold=%(fold)s::int)
+                GROUP BY regime
             """,
             "mart.mv_robustness_surface": """
                 SELECT sweep_role, avg(metric_value) AS metric_value, avg(robust_score) AS robust_score, count(*) AS observations
@@ -458,6 +684,11 @@ class PostgresBackend:
                 FROM mart.mv_decision_outcome
                 WHERE candidate_id=%(candidate_id)s AND universe_id=%(universe_id)s AND horizon=20
                   AND (%(fold)s::int IS NULL OR fold=%(fold)s::int)
+                  AND (
+                    %(preset_id)s NOT IN ('decision-high-exposure-bad', 'decision-backoff-positive')
+                    OR (%(preset_id)s = 'decision-high-exposure-bad' AND expected_exposure >= 0.80 AND realized_return < 0)
+                    OR (%(preset_id)s = 'decision-backoff-positive' AND participation_state ILIKE '%%BACKOFF%%' AND realized_return > 0)
+                  )
             """,
             "oltp.dss_query_log": """
                 SELECT endpoint, source_relation, count(*) AS query_count, avg(elapsed_ms) AS avg_elapsed_ms,
@@ -467,9 +698,12 @@ class PostgresBackend:
                 GROUP BY endpoint, source_relation
             """,
         }
+        params["preset_id"] = preset_id
         rows = self._query(f"SELECT * FROM ({sql_by_source[source]}) q ORDER BY {measure} DESC NULLS LAST LIMIT %(limit)s", params)["rows"]
-        if preset_id in {"ticker-largest-drags", "decision-worst-20d", "fold-worst-drawdown", "candidate-severe-fold-damage", "axis-degrades-most"}:
+        if preset_id in {"ticker-largest-drags", "decision-worst-20d", "fold-worst-drawdown", "candidate-severe-fold-damage", "axis-degrades-most", "regime-weakest-outcome"}:
             rows = self._query(f"SELECT * FROM ({sql_by_source[source]}) q ORDER BY {measure} ASC NULLS LAST LIMIT %(limit)s", params)["rows"]
+        if preset_id == "ticker-selection-low-contribution":
+            rows = [row for row in rows if (row.get("selection_rate") or 0) > 0 and (row.get("total_pnl_contribution") or 0) <= 0]
         rows = [row for row in rows if row.get(measure) is not None]
         return {"preset_id": preset_id, "question": question, "operation": operation, "source": source, "measure": measure, "dimension": dimension, "count": len(rows), "rows": rows}
 
@@ -556,6 +790,28 @@ class PostgresBackend:
         }
 
     def ticker_contribution(self, candidate_id, universe_id, fold, limit=200):
+        if fold is None:
+            return self._query(
+                """
+                SELECT
+                    candidate_id,
+                    universe_id,
+                    ticker,
+                    sum(total_pnl_contribution) AS total_pnl_contribution,
+                    avg(avg_final_weight) AS avg_final_weight,
+                    avg(selection_rate) AS selection_rate,
+                    avg(leader_flag_rate) AS leader_flag_rate,
+                    min(worst_daily_contribution) AS worst_daily_contribution,
+                    sum(observations) AS observations,
+                    bool_or(demo_mode) AS demo_mode
+                FROM mart.mv_ticker_contribution
+                WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s
+                GROUP BY candidate_id, universe_id, ticker
+                ORDER BY total_pnl_contribution DESC NULLS LAST
+                LIMIT %(limit)s
+                """,
+                {"candidate_id": candidate_id, "universe_id": universe_id, "limit": limit},
+            )
         return self._query(
             """
             SELECT * FROM mart.mv_ticker_contribution
@@ -567,6 +823,30 @@ class PostgresBackend:
         )
 
     def regime_behavior(self, candidate_id, universe_id, fold):
+        if fold is None:
+            return self._query(
+                """
+                SELECT
+                    regime,
+                    candidate_id,
+                    universe_id,
+                    avg(avg_net_return) AS avg_net_return,
+                    avg(avg_benchmark_return) AS avg_benchmark_return,
+                    avg(avg_exposure) AS avg_exposure,
+                    avg(avg_turnover) AS avg_turnover,
+                    avg(avg_drawdown) AS avg_drawdown,
+                    avg(backoff_activation_rate) AS backoff_activation_rate,
+                    avg(continuation_activation_rate) AS continuation_activation_rate,
+                    avg(avg_leader_blend) AS avg_leader_blend,
+                    sum(observations) AS observations,
+                    bool_or(demo_mode) AS demo_mode
+                FROM mart.mv_regime_behavior
+                WHERE candidate_id = %(candidate_id)s AND universe_id = %(universe_id)s
+                GROUP BY regime, candidate_id, universe_id
+                ORDER BY observations DESC
+                """,
+                {"candidate_id": candidate_id, "universe_id": universe_id},
+            )
         return self._query(
             """
             SELECT * FROM mart.mv_regime_behavior

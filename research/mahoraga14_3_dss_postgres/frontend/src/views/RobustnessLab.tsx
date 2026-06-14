@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import type { Options, Row } from "../api/types";
 import { ChartPanel } from "../components/ChartPanel";
 import { ChartTooltip, axisLabel } from "../components/ChartTooltip";
@@ -33,6 +33,19 @@ export default function RobustnessLab({ options }: { options: Options | null }) 
     .filter((row) => row.cagr !== null && row.cagr !== undefined && row.sharpe !== null && row.sharpe !== undefined && row.maxdd !== null && row.maxdd !== undefined);
   const compareRows = rowsFrom(compare.data);
   const usableSurface = hasHeatmap(points, xAxis, yAxis, "metric_value", 6);
+  const curve = useMemo(() => {
+    const grouped = new Map<string, { axis_value: string; total: number; count: number }>();
+    points.forEach((row) => {
+      const key = String(row[xAxis]);
+      const value = asNumber(row.metric_value);
+      if (value === null) return;
+      const current = grouped.get(key) ?? { axis_value: key, total: 0, count: 0 };
+      grouped.set(key, { axis_value: key, total: current.total + value, count: current.count + 1 });
+    });
+    return Array.from(grouped.values())
+      .map((row) => ({ axis_value: row.axis_value, metric_value: row.total / Math.max(1, row.count), observations: row.count }))
+      .sort((a, b) => Number(a.axis_value) - Number(b.axis_value));
+  }, [points, xAxis]);
   const yAxisOptions = useMemo(() => axes.filter((axis) => axis !== xAxis), [xAxis]);
   const insight = useMemo(() => {
     const dominant = topRows(sensitivity, "sensitivity_score", 1)[0];
@@ -74,16 +87,16 @@ export default function RobustnessLab({ options }: { options: Options | null }) 
       </ChartPanel>
 
       <ChartPanel
-        title={usableSurface ? "Robustness Surface" : "Sparse Sweep Fallback"}
-        question={usableSurface ? "Does the metric form a usable plateau?" : "Sparse sweep on this pair; showing ranked sensitivity instead."}
+        title={usableSurface ? "Robustness Surface" : "1D Sensitivity Curve"}
+        question={usableSurface ? "Does the metric form a usable plateau?" : "Sparse 2D sweep on this pair; showing a cleaner 1D average by selected X axis."}
         source="mart.mv_robustness_surface"
-        ready={usableSurface || sensitivity.length >= 2}
+        ready={usableSurface || curve.length >= 2}
         action={<><SelectControl label="Metric" value={metric} options={metricOptions} onChange={setMetric} compact /><SelectControl label="X axis" value={xAxis} options={axes} onChange={setXAxis} compact /><SelectControl label="Y axis" value={yAxis} options={yAxisOptions} onChange={setYAxis} compact /></>}
       >
         {usableSurface ? (
           <ResponsiveContainer width="100%" height="100%"><ScatterChart><CartesianGrid stroke="#22303a" /><XAxis dataKey={xAxis} type="number" label={axisLabel(xAxis.replaceAll("_", " "))} /><YAxis dataKey={yAxis} type="number" label={axisLabel(yAxis.replaceAll("_", " "), true)} /><ZAxis dataKey="metric_value" range={[40, 280]} /><Tooltip content={<ChartTooltip />} /><Scatter data={points}>{points.map((row, index) => <Cell key={index} fill={row.candidate_id === OFFICIAL_CANDIDATE_ID || (asNumber(row[xAxis]) === 1.05 && asNumber(row[yAxis]) === 1.1) ? "#f7c76a" : "#72f0b1"} />)}</Scatter></ScatterChart></ResponsiveContainer>
         ) : (
-          <ResponsiveContainer width="100%" height="100%"><BarChart data={sensitivity} layout="vertical"><CartesianGrid stroke="#22303a" /><XAxis type="number" label={axisLabel("Sensitivity score")} /><YAxis dataKey="axis" type="category" width={170} label={axisLabel("Parameter", true)} /><Tooltip content={<ChartTooltip />} /><Bar dataKey="sensitivity_score" fill="#80d8ff" /></BarChart></ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%"><LineChart data={curve}><CartesianGrid stroke="#22303a" /><XAxis dataKey="axis_value" label={axisLabel(xAxis.replaceAll("_", " "))} /><YAxis label={axisLabel(metric, true)} /><Tooltip content={<ChartTooltip />} /><Line dataKey="metric_value" stroke="#80d8ff" strokeWidth={2} dot /></LineChart></ResponsiveContainer>
         )}
       </ChartPanel>
 

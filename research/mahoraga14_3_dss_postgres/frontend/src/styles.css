@@ -431,6 +431,12 @@ td {
   text-overflow: ellipsis;
 }
 
+tr.highlight-row td {
+  background: rgba(247, 199, 106, 0.13);
+  border-top: 1px solid rgba(247, 199, 106, 0.28);
+  border-bottom: 1px solid rgba(247, 199, 106, 0.18);
+}
+
 .pager {
   display: flex;
   align-items: center;
@@ -587,6 +593,48 @@ input[type="range"] {
 .casebook-card button,
 .workbench-card button {
   margin-top: 9px;
+}
+
+.heatmap-table {
+  display: grid;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.heatmap-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.2fr) repeat(auto-fit, minmax(86px, 1fr));
+  gap: 6px;
+  min-width: 720px;
+  align-items: stretch;
+}
+
+.heatmap-row span,
+.heatmap-row b {
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 8px 9px;
+  min-height: 34px;
+  font-size: 12px;
+}
+
+.heatmap-row span {
+  color: var(--text);
+  background: rgba(9, 13, 15, 0.72);
+}
+
+.heatmap-row b {
+  display: grid;
+  place-items: center;
+  color: #f7fbfc;
+  font-weight: 680;
+}
+
+.heatmap-row.header span,
+.heatmap-row.header b {
+  color: var(--muted);
+  background: rgba(17, 24, 27, 0.82);
+  font-weight: 700;
 }
 
 @media (max-width: 980px) {
