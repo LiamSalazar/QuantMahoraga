@@ -17,14 +17,19 @@ function pValue(value: unknown) {
   return n < 0.001 ? "<0.001" : n.toFixed(3);
 }
 
+function hasNumeric(value: unknown) {
+  return asNumber(value) !== null;
+}
+
 function statsRow(row: Record<string, unknown>): Row | null {
   const benchmark = row.Benchmark ?? row.benchmark;
-  const alpha = row.alpha_ann ?? row.AlphaNW_QQQ ?? row.AlphaNW_SPY;
-  const tAlpha = row.t_alpha;
-  const pAlpha = row.p_alpha;
-  const beta = row.beta;
-  const r2 = row.r2;
-  if (!benchmark || [alpha, tAlpha, pAlpha, beta, r2].some((value) => asNumber(value) === null)) return null;
+  const alpha = row.alpha_ann ?? row.AlphaNW_QQQ ?? row.AlphaNW_SPY ?? row.alpha;
+  const tAlpha = row.t_alpha ?? row.TAlpha;
+  const pAlpha = row.p_alpha ?? row.p_value ?? row.pValue;
+  const beta = row.beta ?? row.Beta;
+  const r2 = row.r2 ?? row.R2;
+  const metrics = [alpha, tAlpha, pAlpha, beta, r2];
+  if (!benchmark || !metrics.some(hasNumeric)) return null;
   return {
     benchmark: String(benchmark),
     alpha_ann: formatPercent(alpha),
@@ -32,6 +37,55 @@ function statsRow(row: Record<string, unknown>): Row | null {
     p_alpha: pValue(pAlpha),
     beta: formatNumber(beta, 2),
     r2: formatNumber(r2, 2),
+  };
+}
+
+function isValidHorizon(value: unknown) {
+  const n = asNumber(value);
+  return n !== null && Number.isInteger(n) && n > 0;
+}
+
+function outcomePercentileRow(row: Row): Row | null {
+  const required = [
+    row.horizon,
+    row.observations,
+    row.avg_outcome,
+    row.p5_outcome,
+    row.p25_outcome,
+    row.median_outcome,
+    row.p75_outcome,
+    row.p95_outcome,
+    row.helped_rate,
+  ];
+  if (!isValidHorizon(row.horizon) || required.some((value) => !hasNumeric(value))) return null;
+  return {
+    horizon: formatNumber(row.horizon, 0),
+    observations: formatNumber(row.observations, 0),
+    avg_outcome: formatPercent(row.avg_outcome),
+    p5_outcome: formatPercent(row.p5_outcome),
+    p25_outcome: formatPercent(row.p25_outcome),
+    median_outcome: formatPercent(row.median_outcome),
+    p75_outcome: formatPercent(row.p75_outcome),
+    p95_outcome: formatPercent(row.p95_outcome),
+    helped_rate: formatPercent(row.helped_rate),
+    alpha_vs_qqq: formatPercent(row.avg_alpha_vs_qqq),
+    alpha_vs_spy: formatPercent(row.avg_alpha_vs_spy),
+  };
+}
+
+function decisionPercentileRow(row: Row): Row | null {
+  const metric = row.metric;
+  const required = [row.observations, row.average, row.p5, row.p25, row.median, row.p75, row.p95];
+  if (!metric || required.some((value) => !hasNumeric(value))) return null;
+  return {
+    metric: String(metric),
+    observations: formatNumber(row.observations, 0),
+    average: formatPercent(row.average),
+    p5: formatPercent(row.p5),
+    p25: formatPercent(row.p25),
+    median: formatPercent(row.median),
+    p75: formatPercent(row.p75),
+    p95: formatPercent(row.p95),
   };
 }
 
@@ -46,9 +100,14 @@ export default function BaselineEvidence() {
   const cost = [...rowsFrom(data, "cost_sensitivity"), ...rowsFrom(data, "slippage_sensitivity")];
   const baseCost = cost[0] ?? {};
   const costDelta = cost.map((row) => ({ ...row, delta_cagr: Number(row.CAGR ?? 0) - Number(baseCost.CAGR ?? 0), delta_sharpe: Number(row.Sharpe ?? 0) - Number(baseCost.Sharpe ?? 0) }));
-  const outcomePercentiles = rowsFrom(distributions.data, "outcome_percentiles");
+  const outcomePercentiles = rowsFrom(distributions.data, "outcome_percentiles").filter((row) => isValidHorizon(row.horizon));
   const decisionPercentiles = rowsFrom(distributions.data, "decision_percentiles");
-  const statisticalRows = alpha.map(statsRow).filter((row): row is Row => row !== null);
+  const outcomePercentileRows = outcomePercentiles.map(outcomePercentileRow).filter((row): row is Row => row !== null);
+  const decisionPercentileRows = decisionPercentiles.map(decisionPercentileRow).filter((row): row is Row => row !== null);
+  const statisticalRows = alpha
+    .map(statsRow)
+    .filter((row): row is Row => row !== null)
+    .filter((row) => ["QQQ", "SPY"].includes(String(row.benchmark)));
   const qqqStats = statisticalRows.find((row) => String(row.benchmark).includes("QQQ"));
   const spyStats = statisticalRows.find((row) => String(row.benchmark).includes("SPY"));
   if ((resource.loading || distributions.loading) && !resource.data) return <LoadingState label="Loading official baseline evidence" />;
@@ -131,9 +190,15 @@ export default function BaselineEvidence() {
         <DataTable rows={statisticalRows} columns={["benchmark", "alpha_ann", "t_alpha", "p_alpha", "beta", "r2"]} pageSize={10} />
       </section>
       <section className="panel span-12">
-        <SectionHeader title="Distribution Percentile Table" question="Postgres aggregations over outcome and decision-state facts." source="dw.fact_outcome + dw.fact_decision_state" />
-        <DataTable rows={[...outcomePercentiles, ...decisionPercentiles]} pageSize={10} />
+        <SectionHeader title="Distribution Percentile Table" question="Postgres outcome aggregations over valid forward horizons." source="dw.fact_outcome" />
+        <DataTable rows={outcomePercentileRows} columns={["horizon", "observations", "avg_outcome", "p5_outcome", "p25_outcome", "median_outcome", "p75_outcome", "p95_outcome", "helped_rate", "alpha_vs_qqq", "alpha_vs_spy"]} pageSize={10} />
       </section>
+      {decisionPercentileRows.length ? (
+        <section className="panel span-12">
+          <SectionHeader title="Decision-State Percentile Table" question="Exposure, turnover and drawdown distributions from decision-state facts." source="dw.fact_decision_state" />
+          <DataTable rows={decisionPercentileRows} columns={["metric", "observations", "average", "p5", "p25", "median", "p75", "p95"]} pageSize={10} />
+        </section>
+      ) : null}
     </div>
   );
 }
