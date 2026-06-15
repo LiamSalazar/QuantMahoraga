@@ -1,5 +1,5 @@
 {
-  "run_id": "dss_20260614T211645Z",
+  "run_id": "dss_20260615T141021Z",
   "profile": "standard",
   "mode": "postgres",
   "baseline_modified": false,
@@ -33,12 +33,19 @@
     "fact_robustness_surface": 456,
     "fact_cost_sensitivity": 6,
     "fact_universe_sensitivity": 15,
-    "fact_whatif": 2542,
     "fact_path_recursive": 2295,
+    "fact_whatif": 2542,
     "fact_data_quality": 14
   },
   "validation_passed": true,
-  "generated_at": "2026-06-14T21:16:46.072329+00:00",
+  "data_contracts_passed": true,
+  "pending_outcomes": {
+    "rows": 55080,
+    "ready": 13770,
+    "pending": 0,
+    "computed": 41310
+  },
+  "generated_at": "2026-06-15T14:10:28.983452+00:00",
   "postgres_load_counts": {
     "oltp.research_run": 1,
     "oltp.data_snapshot": 1,
@@ -67,5 +74,6 @@
     "dw.fact_whatif": 2542,
     "dw.fact_path_recursive": 2295,
     "dw.fact_data_quality": 14
-  }
+  },
+  "published": true
 }

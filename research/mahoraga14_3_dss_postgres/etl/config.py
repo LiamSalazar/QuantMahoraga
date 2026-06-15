@@ -10,6 +10,7 @@ OFFICIAL_CANDIDATE_ID = "B1.05_C1.10_L1.10_R1.05"
 OFFICIAL_UNIVERSE_ID = "base_universe_12"
 BASELINE_REFERENCE = "Mahoraga14_3R / ROBUST_MAIN / B1.05_C1.10_L1.10_R1.05"
 PHASE = "mahoraga14_3_dss_postgres"
+SCHEMA_VERSION = "dss_postgres_v1.1"
 
 MODULE_ORDER = {
     "BASE_ALPHA_V2": ("base alpha", 10),

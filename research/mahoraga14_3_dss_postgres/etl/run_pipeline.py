@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 import polars as pl
@@ -20,11 +22,15 @@ from .build_fact_signal_daily import build_fact_signal_daily
 from .build_fact_universe_sensitivity import build_fact_universe_sensitivity
 from .build_fact_whatif import build_fact_whatif
 from .config import BASELINE_REFERENCE, OFFICIAL_CANDIDATE_ID, PHASE, RuntimeConfig, make_config
+from .control_plane import ensure_control_plane, finish_pipeline_run, publish_run, stage_timer, start_pipeline_run
+from .data_contracts import persist_contract_results, validate_all_contracts, write_contract_report
 from .discover_artifacts import discover
 from .extract_existing_cubes import load_sources
 from .load_postgres import load_all
+from .pending_outcomes import detect_pending_outcomes, persist_pending_outcomes
 from .paths import DssPaths, ensure_output_dirs, get_paths
 from .refresh_views import refresh
+from .source_manifest import diff_manifests, load_previous_manifest, persist_manifest, scan_sources, write_manifest_report
 from .validate_outputs import validate
 from .write_parquet import write_tables
 
@@ -102,35 +108,63 @@ def _build_oltp_tables(inventory: pl.DataFrame, candidate_metric: pl.DataFrame, 
     }
 
 
-def build_all(config: RuntimeConfig, paths: DssPaths | None = None) -> tuple[dict[str, pl.DataFrame], dict[str, int], dict]:
+def _effective_parallelism(requested: int | None = None) -> int:
+    if requested and requested > 0:
+        return requested
+    raw = os.getenv("DSS_PARALLELISM", "1").strip().lower()
+    if raw == "auto":
+        return max(1, min(8, (os.cpu_count() or 2) // 2 or 1))
+    if raw.isdigit():
+        return max(1, int(raw))
+    return 1
+
+
+def _build_facts(sources: dict[str, pl.DataFrame], config: RuntimeConfig, fact_whatif: pl.DataFrame, parallelism: int) -> dict[str, pl.DataFrame]:
+    builders = {
+        "fact_market_bar": lambda: build_fact_market_bar(sources, config.run_id),
+        "fact_signal_daily": lambda: build_fact_signal_daily(sources, config.run_id),
+        "fact_decision_state": lambda: build_fact_decision_state(sources, config.run_id),
+        "fact_position_daily": lambda: build_fact_position_daily(sources, config.run_id),
+        "fact_module_trace": lambda: build_fact_module_trace(sources, config.run_id),
+        "fact_outcome": lambda: build_fact_outcome(sources, config.run_id),
+        "fact_candidate_metric": lambda: build_fact_candidate_metric(sources, config.run_id),
+        "fact_robustness_surface": lambda: build_fact_robustness_surface(sources, config.run_id),
+        "fact_cost_sensitivity": lambda: build_fact_cost_sensitivity(sources, config.run_id),
+        "fact_universe_sensitivity": lambda: build_fact_universe_sensitivity(sources, config.run_id),
+        "fact_path_recursive": lambda: build_fact_path_recursive(sources, config.run_id),
+    }
+    if parallelism <= 1:
+        facts = {name: build() for name, build in builders.items()}
+    else:
+        facts = {}
+        with ThreadPoolExecutor(max_workers=parallelism) as executor:
+            future_to_name = {executor.submit(build): name for name, build in builders.items()}
+            for future in as_completed(future_to_name):
+                facts[future_to_name[future]] = future.result()
+        facts = {name: facts[name] for name in builders}
+    facts["fact_whatif"] = fact_whatif
+    return facts
+
+
+def build_all(config: RuntimeConfig, paths: DssPaths | None = None, parallelism: int | None = None) -> tuple[dict[str, pl.DataFrame], dict[str, int], dict]:
     paths = ensure_output_dirs(paths or get_paths())
     sources = load_sources(paths)
     inventory = discover(paths, run_id=config.run_id)
 
     fact_whatif = build_fact_whatif(sources, config)
     dimensions = build_dimensions(sources, fact_whatif)
-    facts = {
-        "fact_market_bar": build_fact_market_bar(sources, config.run_id),
-        "fact_signal_daily": build_fact_signal_daily(sources, config.run_id),
-        "fact_decision_state": build_fact_decision_state(sources, config.run_id),
-        "fact_position_daily": build_fact_position_daily(sources, config.run_id),
-        "fact_module_trace": build_fact_module_trace(sources, config.run_id),
-        "fact_outcome": build_fact_outcome(sources, config.run_id),
-        "fact_candidate_metric": build_fact_candidate_metric(sources, config.run_id),
-        "fact_robustness_surface": build_fact_robustness_surface(sources, config.run_id),
-        "fact_cost_sensitivity": build_fact_cost_sensitivity(sources, config.run_id),
-        "fact_universe_sensitivity": build_fact_universe_sensitivity(sources, config.run_id),
-        "fact_whatif": fact_whatif,
-        "fact_path_recursive": build_fact_path_recursive(sources, config.run_id),
-    }
+    facts = _build_facts(sources, config, fact_whatif, _effective_parallelism(parallelism))
     oltp = _build_oltp_tables(inventory, facts["fact_candidate_metric"], config)
     tables = {**oltp, **dimensions, **facts}
     row_counts = write_tables(tables, paths, config.run_id)
     validation_report = validate(paths)
+    contract_results = validate_all_contracts(tables)
+    write_contract_report(contract_results, config.run_id, paths)
     quality = _build_fact_data_quality(validation_report, config.run_id)
     if not quality.is_empty():
         tables["fact_data_quality"] = quality
         row_counts.update(write_tables({"fact_data_quality": quality}, paths, config.run_id))
+    pending_outcomes = detect_pending_outcomes(facts["fact_decision_state"], facts["fact_outcome"], config.run_id)
     real_rows = sum(count for name, count in row_counts.items() if name != "fact_whatif")
     whatif = facts["fact_whatif"]
     demo_rows = int(whatif.filter(pl.col("demo_mode")).height) if not whatif.is_empty() and "demo_mode" in whatif.columns else 0
@@ -147,6 +181,13 @@ def build_all(config: RuntimeConfig, paths: DssPaths | None = None) -> tuple[dic
         "real_row_target_met": (real_rows + real_whatif) >= config.row_target["expected_real_min_rows"],
         "row_counts": row_counts,
         "validation_passed": validation_report["passed"],
+        "data_contracts_passed": all(result.passed for result in contract_results),
+        "pending_outcomes": {
+            "rows": pending_outcomes.height,
+            "ready": int(pending_outcomes.filter(pl.col("status") == "ready").height) if not pending_outcomes.is_empty() else 0,
+            "pending": int(pending_outcomes.filter(pl.col("status") == "pending").height) if not pending_outcomes.is_empty() else 0,
+            "computed": int(pending_outcomes.filter(pl.col("status") == "computed").height) if not pending_outcomes.is_empty() else 0,
+        },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     (paths.reports_root / "pipeline_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -155,13 +196,58 @@ def build_all(config: RuntimeConfig, paths: DssPaths | None = None) -> tuple[dic
 
 def run(config: RuntimeConfig, skip_postgres: bool = False, truncate: bool = False) -> dict:
     paths = ensure_output_dirs()
-    _, _, summary = build_all(config, paths)
-    if config.mode == "postgres" and not skip_postgres:
-        load_counts = load_all(config, paths, bootstrap=True, truncate=truncate)
-        refresh(config.database_url)
-        summary["postgres_load_counts"] = load_counts
-        (paths.reports_root / "pipeline_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    return summary
+    database_url = config.database_url if config.mode == "postgres" and not skip_postgres else None
+    if database_url:
+        ensure_control_plane(database_url, paths)
+    previous_manifest = load_previous_manifest(database_url)
+    current_manifest = scan_sources(config=config)
+    source_diff = diff_manifests(current_manifest, previous_manifest)
+    write_manifest_report(current_manifest, source_diff, config.run_id, paths)
+    if database_url:
+        persist_manifest(database_url, current_manifest, config.run_id)
+        start_pipeline_run(
+            database_url,
+            run_id=config.run_id,
+            strategy="full_refresh",
+            profile=config.profile,
+            mode=config.mode,
+            changed_sources_count=source_diff.changed_sources_count,
+            changed_partitions_count=0,
+        )
+    try:
+        with stage_timer(database_url, config.run_id, "build_parquet") as metrics:
+            tables, row_counts, summary = build_all(config, paths)
+            metrics["rows_written"] = sum(row_counts.values())
+        if database_url:
+            contract_results = validate_all_contracts(tables)
+            persist_contract_results(database_url, config.run_id, contract_results)
+            pending = detect_pending_outcomes(tables.get("fact_decision_state", pl.DataFrame()), tables.get("fact_outcome", pl.DataFrame()), config.run_id)
+            persist_pending_outcomes(database_url, pending)
+        if config.mode == "postgres" and not skip_postgres:
+            with stage_timer(database_url, config.run_id, "postgres_load") as metrics:
+                load_counts = load_all(config, paths, bootstrap=True, truncate=truncate)
+                metrics["rows_written"] = sum(load_counts.values())
+            with stage_timer(database_url, config.run_id, "mart_refresh"):
+                refresh(config.database_url, run_id=config.run_id)
+            summary["postgres_load_counts"] = load_counts
+            publish_run(database_url, config.run_id)
+            summary["published"] = True
+            (paths.reports_root / "pipeline_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        if database_url:
+            finish_pipeline_run(
+                database_url,
+                run_id=config.run_id,
+                status="COMPLETED",
+                total_rows_processed=int(summary.get("total_rows_written") or 0),
+                total_rows_loaded=sum(summary.get("postgres_load_counts", {}).values()) if summary.get("postgres_load_counts") else 0,
+                validation_status="PASS" if summary.get("validation_passed") and summary.get("data_contracts_passed", True) else "FAIL",
+                published=bool(summary.get("published")),
+            )
+        return summary
+    except Exception as exc:
+        if database_url:
+            finish_pipeline_run(database_url, run_id=config.run_id, status="FAILED", error_message=str(exc), published=False)
+        raise
 
 
 def main() -> None:
@@ -171,6 +257,7 @@ def main() -> None:
     parser.add_argument("--database-url", default=None)
     parser.add_argument("--skip-postgres", action="store_true")
     parser.add_argument("--truncate", action="store_true")
+    parser.add_argument("--parallelism", type=int, default=None)
     parser.add_argument("--no-demo-grid", action="store_true", help="Disable explicitly flagged synthetic what-if rows.")
     args = parser.parse_args()
     config = make_config(
@@ -179,6 +266,8 @@ def main() -> None:
         database_url=args.database_url,
         include_demo_grid=not args.no_demo_grid,
     )
+    if args.parallelism:
+        os.environ["DSS_PARALLELISM"] = str(args.parallelism)
     summary = run(config, skip_postgres=args.skip_postgres, truncate=args.truncate)
     print(json.dumps(summary, indent=2))
 

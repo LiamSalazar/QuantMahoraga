@@ -1,0 +1,81 @@
+{
+  "strategy": "dry_run",
+  "reason": "Dry run requested; no database changes will be made.",
+  "estimated_rows": 323980,
+  "scale_class": "small",
+  "parallelism": 4,
+  "changed_sources": [
+    "active_return_vs_qqq_official",
+    "fold_summary_official",
+    "stitched_comparison_official",
+    "allocator_cash_drag_official",
+    "OFFICIAL_FREEZE",
+    "analysis_config",
+    "extended_multiplier_summary",
+    "extended_multiplier_fold_summary",
+    "universe_robustness_summary",
+    "decision_date_cube",
+    "position_cube",
+    "module_trace_cube",
+    "outcome_cube",
+    "market_context_cube",
+    "cube_dictionary",
+    "file_manifest"
+  ],
+  "affected_tables": [
+    "fact_candidate_metric",
+    "fact_decision_state",
+    "fact_market_bar",
+    "fact_module_trace",
+    "fact_outcome",
+    "fact_path_recursive",
+    "fact_position_daily",
+    "fact_universe_sensitivity",
+    "fact_whatif"
+  ],
+  "affected_partitions": {},
+  "facts_to_build": [
+    "fact_candidate_metric",
+    "fact_decision_state",
+    "fact_market_bar",
+    "fact_module_trace",
+    "fact_outcome",
+    "fact_path_recursive",
+    "fact_position_daily",
+    "fact_universe_sensitivity",
+    "fact_whatif"
+  ],
+  "dimensions_to_build": [
+    "all"
+  ],
+  "marts_to_refresh": [
+    "mart.mv_scorecard_candidate",
+    "mart.mv_performance_by_fold",
+    "mart.mv_decision_outcome",
+    "mart.mv_module_effectiveness",
+    "mart.mv_ticker_contribution",
+    "mart.mv_regime_behavior",
+    "mart.mv_whatif_grid",
+    "mart.mv_drawdown_replay",
+    "mart.mv_decision_replay"
+  ],
+  "cache_to_invalidate": [
+    "/decision/replay",
+    "/fold/performance",
+    "/module/effectiveness",
+    "/regime/behavior",
+    "/research/cohorts",
+    "/research/command-center",
+    "/research/decision-casebook",
+    "/research/distributions",
+    "/research/olap-preset",
+    "/research/robustness-compare",
+    "/research/whatif-reference",
+    "/scorecard",
+    "/ticker/contribution",
+    "/whatif/grid"
+  ],
+  "validation_level": "standard",
+  "publish_mode": "staged",
+  "fallback_allowed": true
+}

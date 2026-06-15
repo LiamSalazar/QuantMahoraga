@@ -17,6 +17,7 @@ from .research_artifacts import (
 )
 from .schemas import HealthResponse
 from .settings import load_settings
+from etl.config import SCHEMA_VERSION
 
 settings = load_settings()
 backend = create_backend(settings)
@@ -72,6 +73,7 @@ def health() -> dict:
         "profile": settings.profile,
         "demo_mode": backend.demo_mode(),
         "row_counts": backend.row_counts(),
+        "schema_version": SCHEMA_VERSION,
     }
 
 

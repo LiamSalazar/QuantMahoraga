@@ -37,6 +37,54 @@ python -m etl.validate_postgres
 python -m scripts.smoke_postgres
 ```
 
+## Adaptive Pipeline
+
+Plan without modifying Postgres:
+
+```bash
+export DSS_BACKEND=postgres
+export DATABASE_URL="postgresql:///mahoraga_dss"
+python -m etl.run_adaptive --strategy auto --dry-run
+```
+
+Run adaptive execution:
+
+```bash
+python -m etl.run_adaptive --strategy auto
+```
+
+Full refresh remains the fallback when no previous manifest exists, when a
+large portion of rows changed, or when the affected tables are not supported by
+the incremental partition loader. Incremental partition refresh is currently
+supported for selected facts documented in
+`docs/SCALABILITY_AND_OPERATIONS.md`.
+
+Refresh dependent marts manually:
+
+```bash
+python -m etl.refresh_views --strategy dependency --changed-tables fact_outcome,fact_position_daily
+```
+
+Operational reports are written to `outputs/control/`.
+
+## Engineering Benchmarks
+
+```bash
+python -m scripts.benchmark_queries --smoke
+python -m scripts.partition_pruning_demo
+python -m scripts.load_test_api --base-url http://127.0.0.1:8002 --concurrency 20 --requests 1000
+```
+
+Benchmark-only scale fixtures:
+
+```bash
+python -m scripts.generate_scale_fixture --target-rows 4000000
+```
+
+Fixtures are written under `outputs/scale_fixtures/` with
+`benchmark_mode=true`. Do not load them into the standard DSS or present them as
+research evidence.
+
 TCP:
 
 ```bash

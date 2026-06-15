@@ -14,3 +14,4 @@ class HealthResponse(BaseModel):
     profile: str
     demo_mode: bool
     row_counts: dict[str, int] = Field(default_factory=dict)
+    schema_version: str | None = None

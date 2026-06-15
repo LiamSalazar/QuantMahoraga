@@ -13,6 +13,8 @@ class DssPaths:
     outputs_root: Path
     parquet_root: Path
     reports_root: Path
+    control_root: Path
+    benchmarks_root: Path
     logs_root: Path
     demo_root: Path
     sql_root: Path
@@ -38,6 +40,8 @@ def get_paths() -> DssPaths:
         outputs_root=outputs_root,
         parquet_root=outputs_root / "parquet",
         reports_root=outputs_root / "reports",
+        control_root=outputs_root / "control",
+        benchmarks_root=outputs_root / "benchmarks",
         logs_root=outputs_root / "logs",
         demo_root=outputs_root / "demo_data",
         sql_root=phase_root / "sql",
@@ -46,6 +50,14 @@ def get_paths() -> DssPaths:
 
 def ensure_output_dirs(paths: DssPaths | None = None) -> DssPaths:
     paths = paths or get_paths()
-    for directory in [paths.outputs_root, paths.parquet_root, paths.reports_root, paths.logs_root, paths.demo_root]:
+    for directory in [
+        paths.outputs_root,
+        paths.parquet_root,
+        paths.reports_root,
+        paths.control_root,
+        paths.benchmarks_root,
+        paths.logs_root,
+        paths.demo_root,
+    ]:
         directory.mkdir(parents=True, exist_ok=True)
     return paths

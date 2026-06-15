@@ -1,0 +1,17 @@
+{
+  "strategy": "dry_run",
+  "reason": "Dry run requested; no database changes will be made.",
+  "estimated_rows": 323980,
+  "scale_class": "small",
+  "parallelism": 4,
+  "changed_sources": [],
+  "affected_tables": [],
+  "affected_partitions": {},
+  "facts_to_build": [],
+  "dimensions_to_build": [],
+  "marts_to_refresh": [],
+  "cache_to_invalidate": [],
+  "validation_level": "standard",
+  "publish_mode": "staged",
+  "fallback_allowed": true
+}

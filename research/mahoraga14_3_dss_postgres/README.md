@@ -31,12 +31,22 @@ The DSS adds an analytical data architecture around the frozen research outputs:
 - FastAPI endpoints over Postgres.
 - A React research frontend with lazy-loaded views, client-side cache, and
   abortable requests.
+- An operations/control-plane layer for source manifests, adaptive execution
+  plans, data contracts, partition manifests, mart refresh logs, publish logs,
+  pending outcomes, and reproducible engineering benchmarks.
 
 The implemented run currently contains `496,967` logical rows, including
 `494,467` real rows and `2,500` flagged simulated what-if rows. The frontend
 does not load raw 400k+ fact rows. It requests summarized distributions,
 percentiles, cohorts, ranking tables, and paginated drill-through records from
 Postgres-backed endpoints and marts.
+
+Scalability and operations details are documented in
+[`docs/SCALABILITY_AND_OPERATIONS.md`](docs/SCALABILITY_AND_OPERATIONS.md). The
+architecture is designed to scale to millions of records by reducing
+recomputation, refreshing supported logical partitions, and refreshing only
+dependent marts. It does not change official quant results and does not present
+benchmark fixtures as research evidence.
 
 ## 2. Official Baseline
 

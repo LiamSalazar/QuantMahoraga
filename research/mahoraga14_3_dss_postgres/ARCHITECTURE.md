@@ -85,3 +85,32 @@ Indexes target DSS filters:
 - Postgres for final OLTP/DW/mart execution.
 - FastAPI for validated DSS endpoints.
 - React/Vite/Recharts for interactive UI.
+
+## Scalability And Operations Layer
+
+The current batch pipeline remains the default contract. A new control-plane
+layer adds source manifests, adaptive planning, stage logs, data contracts,
+partition manifests, dependency-based mart refresh, cache invalidation logs,
+publish logs, pending outcomes, and query/load benchmarks without changing the
+existing OLTP/DW/mart names consumed by the API.
+
+Adaptive path:
+
+```mermaid
+flowchart LR
+  A["Baseline / extended artifacts"] --> B["source manifest + hashing"]
+  B --> C["adaptive planner"]
+  C --> D["execution plan"]
+  D --> E["Polars staging"]
+  E --> F["table Parquet + optional partitioned Parquet"]
+  F --> G["data contracts"]
+  G --> H["Postgres full or partition refresh"]
+  H --> I["dependent mart refresh"]
+  I --> J["publish log + cache invalidation log"]
+  J --> K["unchanged FastAPI endpoints"]
+```
+
+The design scales to millions of rows by avoiding unnecessary full reloads,
+processing supported logical partitions, refreshing only dependent marts, and
+keeping the frontend on hot read models. It does not claim live trading or
+large-user production capacity.

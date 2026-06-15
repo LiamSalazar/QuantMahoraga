@@ -72,6 +72,7 @@ def bootstrap_schema(database_url: str, paths: DssPaths) -> None:
         "005_create_partitions.sql",
         "006_create_indexes.sql",
         "007_create_materialized_views.sql",
+        "011_create_control_plane.sql",
     ]:
         execute_sql_file(database_url, paths.sql_root / name)
 
