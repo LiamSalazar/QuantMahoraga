@@ -109,10 +109,11 @@ def write_partition_manifest(
     entries: list[PartitionManifestEntry],
     paths: DssPaths | None = None,
     database_url: str | None = None,
+    strict: bool = False,
 ) -> None:
     if not entries:
         return
     paths = ensure_output_dirs(paths or get_paths())
     payload = {"run_id": run_id, "partitions": [asdict(entry) for entry in entries]}
     write_control_json(paths, f"partition_manifest_{run_id}.json", payload)
-    log_partition_manifest(database_url, run_id, [asdict(entry) for entry in entries])
+    log_partition_manifest(database_url, run_id, [asdict(entry) for entry in entries], strict=strict)

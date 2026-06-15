@@ -8,8 +8,8 @@
       "Total Cost": 198.67,
       "Plan Rows": 500,
       "Plan Width": 269,
-      "Actual Startup Time": 1.992,
-      "Actual Total Time": 2.107,
+      "Actual Startup Time": 1.605,
+      "Actual Total Time": 1.731,
       "Actual Rows": 500,
       "Actual Loops": 1,
       "Shared Hit Blocks": 128,
@@ -32,8 +32,8 @@
           "Total Cost": 199.08,
           "Plan Rows": 667,
           "Plan Width": 269,
-          "Actual Startup Time": 1.99,
-          "Actual Total Time": 2.048,
+          "Actual Startup Time": 1.604,
+          "Actual Total Time": 1.664,
           "Actual Rows": 500,
           "Actual Loops": 1,
           "Sort Key": [
@@ -64,8 +64,8 @@
               "Total Cost": 166.13,
               "Plan Rows": 667,
               "Plan Width": 269,
-              "Actual Startup Time": 0.013,
-              "Actual Total Time": 0.908,
+              "Actual Startup Time": 0.014,
+              "Actual Total Time": 1.071,
               "Actual Rows": 667,
               "Actual Loops": 1,
               "Filter": "((universe_id = 'base_universe_12'::text) AND (horizon = 20))",
@@ -97,8 +97,8 @@
       "Temp Read Blocks": 0,
       "Temp Written Blocks": 0
     },
-    "Planning Time": 0.491,
+    "Planning Time": 0.517,
     "Triggers": [],
-    "Execution Time": 2.222
+    "Execution Time": 1.858
   }
 ]

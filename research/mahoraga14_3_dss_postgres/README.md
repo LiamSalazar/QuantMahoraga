@@ -48,6 +48,9 @@ recomputation, refreshing supported logical partitions, and refreshing only
 dependent marts. It does not change official quant results and does not present
 benchmark fixtures as research evidence.
 
+The incremental pipeline details, fallback rules, and current active-run limits
+are documented in [`docs/INCREMENTAL_PIPELINE.md`](docs/INCREMENTAL_PIPELINE.md).
+
 ## 2. Official Baseline
 
 The official baseline is the frozen Mahoraga 14.3R `ROBUST_MAIN` candidate:

@@ -18,13 +18,14 @@ from .control_plane import (
     write_control_json,
 )
 from .data_contracts import persist_contract_results, validate_all_contracts, write_contract_report
-from .incremental import PARTITION_SPECS, analyze_affected_tables, load_incremental_partitions
+from .incremental import analyze_affected_tables, load_incremental_partitions
 from .mart_dependencies import cache_for_marts
+from .partition_rules import PARTITION_SPECS, parse_partition_label
 from .partitioned_parquet import PARTITION_COLUMNS, write_partition_manifest, write_partitioned_table
 from .paths import ensure_output_dirs
 from .pending_outcomes import detect_pending_outcomes, persist_pending_outcomes
 from .refresh_views import refresh
-from .run_pipeline import build_all, run as run_standard_pipeline
+from .run_pipeline import build_selected, run as run_standard_pipeline
 from .source_manifest import diff_manifests, load_previous_manifest, persist_manifest, scan_sources, write_manifest_report
 
 
@@ -35,13 +36,26 @@ def _incremental_safe(tables: list[str]) -> tuple[bool, str]:
     return True, "All affected facts have supported logical partition specs."
 
 
-def _write_partitioned_outputs(tables: dict[str, pl.DataFrame], run_id: str, database_url: str | None) -> None:
+def _filter_to_plan_partitions(table_name: str, df: pl.DataFrame, plan) -> pl.DataFrame:
+    labels = (plan.affected_partitions or {}).get(table_name) or []
+    if not labels or labels == ["ALL"] or df.is_empty():
+        return df
+    from .incremental import PartitionKey, _filter_frame
+
+    frames = []
+    for label in labels:
+        frames.append(_filter_frame(df, PartitionKey(table_name, parse_partition_label(table_name, label))))
+    frames = [frame for frame in frames if not frame.is_empty()]
+    return pl.concat(frames).unique() if frames else pl.DataFrame(schema=df.schema)
+
+
+def _write_partitioned_outputs(tables: dict[str, pl.DataFrame], run_id: str, database_url: str | None, plan) -> None:
     entries = []
     root = ensure_output_dirs().outputs_root / "parquet_partitioned"
     for table_name, df in tables.items():
         if table_name in PARTITION_COLUMNS:
-            entries.extend(write_partitioned_table(df, table_name, root=root))
-    write_partition_manifest(run_id, entries, database_url=database_url)
+            entries.extend(write_partitioned_table(_filter_to_plan_partitions(table_name, df, plan), table_name, root=root))
+    write_partition_manifest(run_id, entries, database_url=database_url, strict=False)
 
 
 def run_adaptive(args: argparse.Namespace) -> dict:
@@ -61,6 +75,7 @@ def run_adaptive(args: argparse.Namespace) -> dict:
         source_diff=source_diff,
         previous_manifest_available=bool(previous_manifest),
         requested_strategy=args.strategy,
+        table_stats={"database_url": database_url},
         parallelism=args.parallelism,
         dry_run=args.dry_run,
     )
@@ -74,7 +89,7 @@ def run_adaptive(args: argparse.Namespace) -> dict:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for adaptive Postgres execution")
     ensure_control_plane(database_url, paths)
-    persist_manifest(database_url, current_manifest, config.run_id)
+    persist_manifest(database_url, current_manifest, config.run_id, strict=True)
     start_pipeline_run(
         database_url,
         run_id=config.run_id,
@@ -99,7 +114,28 @@ def run_adaptive(args: argparse.Namespace) -> dict:
             finish_pipeline_run(database_url, run_id=config.run_id, status="COMPLETED", validation_status="PASS", published=True)
             return {"run_id": config.run_id, "plan": plan.to_dict(), "refreshed_marts": refreshed}
 
+        if plan.strategy == "pending_outcomes":
+            with stage_timer(database_url, config.run_id, "pending_outcomes_scan") as metrics:
+                tables, row_counts, summary, fallback_reason = build_selected(
+                    config,
+                    paths,
+                    ["fact_decision_state", "fact_outcome"],
+                    selected_partitions=plan.affected_partitions,
+                    parallelism=plan.parallelism,
+                )
+                if fallback_reason:
+                    raise RuntimeError(fallback_reason)
+                pending = detect_pending_outcomes(tables.get("fact_decision_state", pl.DataFrame()), tables.get("fact_outcome", pl.DataFrame()), config.run_id)
+                persist_pending_outcomes(database_url, pending)
+                metrics["rows_written"] = pending.height
+            finish_pipeline_run(database_url, run_id=config.run_id, status="COMPLETED", total_rows_processed=pending.height, validation_status="PASS", published=False)
+            return {"run_id": config.run_id, "plan": plan.to_dict(), "pending_outcomes": summary.get("pending_outcomes", {}), "pending_rows": pending.height}
+
         safe, reason = _incremental_safe(plan.affected_tables)
+        all_partitions = [table for table, labels in (plan.affected_partitions or {}).items() if labels == ["ALL"] and table != "fact_whatif"]
+        if all_partitions:
+            safe = False
+            reason = f"Incremental partitions are broad/unknown for: {', '.join(sorted(all_partitions))}."
         if plan.strategy in {"incremental_partition_refresh", "whatif_only"} and not safe:
             fallback_plan = {**plan.to_dict(), "strategy": "full_refresh", "fallback_reason": reason}
             write_control_json(paths, f"execution_plan_{config.run_id}_fallback.json", fallback_plan)
@@ -108,19 +144,27 @@ def run_adaptive(args: argparse.Namespace) -> dict:
             return summary
 
         with stage_timer(database_url, config.run_id, "build_incremental_staging") as metrics:
-            tables, row_counts, summary = build_all(config, paths, parallelism=plan.parallelism)
-            _write_partitioned_outputs({name: tables[name] for name in plan.affected_tables if name in tables}, config.run_id, database_url)
+            tables, row_counts, summary, fallback_reason = build_selected(
+                config,
+                paths,
+                plan.facts_to_build,
+                selected_partitions=plan.affected_partitions,
+                parallelism=plan.parallelism,
+            )
+            if fallback_reason:
+                raise RuntimeError(fallback_reason)
+            _write_partitioned_outputs({name: tables[name] for name in plan.affected_tables if name in tables}, config.run_id, database_url, plan)
             metrics["rows_written"] = sum(row_counts.get(name, 0) for name in plan.affected_tables)
 
         contract_results = validate_all_contracts({name: tables[name] for name in plan.affected_tables if name in tables})
         write_contract_report(contract_results, config.run_id, paths)
-        persist_contract_results(database_url, config.run_id, contract_results)
+        persist_contract_results(database_url, config.run_id, contract_results, strict=True)
         if any(not result.passed for result in contract_results):
             finish_pipeline_run(database_url, run_id=config.run_id, status="FAILED_VALIDATION", validation_status="FAIL", published=False)
             raise RuntimeError("Data contract validation failed; incremental publish was blocked.")
 
         with stage_timer(database_url, config.run_id, "incremental_partition_load") as metrics:
-            load_counts = load_incremental_partitions(database_url, plan, paths)
+            load_counts = load_incremental_partitions(database_url, plan, paths, run_id=config.run_id)
             metrics["rows_written"] = sum(load_counts.values())
         analyze_affected_tables(database_url, plan)
         pending = detect_pending_outcomes(tables.get("fact_decision_state", pl.DataFrame()), tables.get("fact_outcome", pl.DataFrame()), config.run_id)
@@ -153,7 +197,7 @@ def run_adaptive(args: argparse.Namespace) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Adaptive Mahoraga DSS Postgres pipeline runner.")
-    parser.add_argument("--strategy", choices=["auto", "full", "incremental", "backfill", "dry-run"], default="auto")
+    parser.add_argument("--strategy", choices=["auto", "full", "incremental", "backfill", "dry-run", "pending-outcomes"], default="auto")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--mode", choices=["postgres", "parquet", "demo"], default="postgres")
     parser.add_argument("--profile", choices=["small", "standard", "competition"], default="standard")

@@ -11,6 +11,14 @@ INSERT INTO oltp.schema_migration_log (schema_version, migration_name)
 VALUES ('dss_postgres_v1.1', '011_create_control_plane.sql')
 ON CONFLICT (schema_version, migration_name) DO NOTHING;
 
+CREATE TABLE IF NOT EXISTS oltp.active_dss_run (
+    singleton_key BOOLEAN PRIMARY KEY DEFAULT true,
+    active_run_id TEXT NOT NULL,
+    activated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    status TEXT NOT NULL DEFAULT 'active',
+    CHECK (singleton_key)
+);
+
 CREATE TABLE IF NOT EXISTS oltp.pipeline_run (
     run_id TEXT PRIMARY KEY,
     strategy TEXT NOT NULL,

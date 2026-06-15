@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+import warnings
 from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime, timezone
@@ -45,8 +46,16 @@ def ensure_control_plane(database_url: str | None, paths: DssPaths | None = None
     execute_sql_file(database_url, paths.sql_root / "011_create_control_plane.sql")
 
 
-def _safe_execute(database_url: str | None, sql: str, params: dict[str, Any] | None = None) -> None:
+def _warn_or_raise(message: str, strict: bool) -> None:
+    if strict:
+        raise RuntimeError(message)
+    warnings.warn(message, RuntimeWarning, stacklevel=2)
+
+
+def _safe_execute(database_url: str | None, sql: str, params: dict[str, Any] | None = None, *, strict: bool = False) -> None:
     if not database_url:
+        if strict:
+            raise RuntimeError("DATABASE_URL is required for strict control-plane operation")
         return
     try:
         import psycopg
@@ -59,8 +68,8 @@ def _safe_execute(database_url: str | None, sql: str, params: dict[str, Any] | N
             with conn.cursor() as cur:
                 cur.execute(sql, converted)
             conn.commit()
-    except Exception:
-        return
+    except Exception as exc:
+        _warn_or_raise(f"control-plane SQL failed: {exc}", strict)
 
 
 def start_pipeline_run(
@@ -98,6 +107,7 @@ def start_pipeline_run(
             "changed_sources_count": changed_sources_count,
             "changed_partitions_count": changed_partitions_count,
         },
+        strict=True,
     )
 
 
@@ -134,6 +144,7 @@ def finish_pipeline_run(
             "published": published,
             "error_message": error_message,
         },
+        strict=True,
     )
 
 
@@ -173,6 +184,7 @@ def log_stage(
             "output_bytes": output_bytes,
             "error_message": error_message,
         },
+        strict=False,
     )
 
 
@@ -198,8 +210,10 @@ def stage_timer(database_url: str | None, run_id: str, stage_name: str) -> Itera
         )
 
 
-def upsert_source_manifest(database_url: str | None, entries: list[Any], run_id: str) -> None:
+def upsert_source_manifest(database_url: str | None, entries: list[Any], run_id: str, *, strict: bool = False) -> None:
     if not database_url or not entries:
+        if strict and not database_url:
+            raise RuntimeError("DATABASE_URL is required to persist source manifest")
         return
     try:
         import psycopg
@@ -235,12 +249,14 @@ def upsert_source_manifest(database_url: str | None, entries: list[Any], run_id:
                         {**row, "run_id": run_id},
                     )
             conn.commit()
-    except Exception:
-        return
+    except Exception as exc:
+        _warn_or_raise(f"failed to persist source manifest: {exc}", strict)
 
 
-def log_data_quality(database_url: str | None, run_id: str, results: list[Any]) -> None:
+def log_data_quality(database_url: str | None, run_id: str, results: list[Any], *, strict: bool = False) -> None:
     if not database_url or not results:
+        if strict and not database_url:
+            raise RuntimeError("DATABASE_URL is required to persist data quality checks")
         return
     try:
         import psycopg
@@ -272,8 +288,8 @@ def log_data_quality(database_url: str | None, run_id: str, results: list[Any]) 
                             },
                         )
             conn.commit()
-    except Exception:
-        return
+    except Exception as exc:
+        _warn_or_raise(f"failed to persist data quality checks: {exc}", strict)
 
 
 def publish_run(database_url: str | None, run_id: str, status: str = "published") -> None:
@@ -286,7 +302,7 @@ def publish_run(database_url: str | None, run_id: str, status: str = "published"
             WHERE status = 'published'
             ORDER BY published_at DESC
             LIMIT 1
-        )
+        ), inserted AS (
         INSERT INTO oltp.publish_log
             (run_id, previous_active_run_id, new_active_run_id, status, rollback_available)
         SELECT
@@ -295,8 +311,17 @@ def publish_run(database_url: str | None, run_id: str, status: str = "published"
             %(run_id)s,
             %(status)s,
             (SELECT new_active_run_id FROM previous) IS NOT NULL
+        RETURNING new_active_run_id
+        )
+        INSERT INTO oltp.active_dss_run (singleton_key, active_run_id, activated_at, status)
+        SELECT true, new_active_run_id, now(), 'active' FROM inserted
+        ON CONFLICT (singleton_key) DO UPDATE SET
+            active_run_id = EXCLUDED.active_run_id,
+            activated_at = EXCLUDED.activated_at,
+            status = EXCLUDED.status
         """,
         {"run_id": run_id, "status": status},
+        strict=True,
     )
 
 
@@ -317,12 +342,14 @@ def log_cache_invalidations(database_url: str | None, run_id: str, endpoints: li
                         {"run_id": run_id, "endpoint": endpoint, "reason": reason},
                     )
             conn.commit()
-    except Exception:
-        return
+    except Exception as exc:
+        _warn_or_raise(f"failed to log cache invalidations: {exc}", False)
 
 
-def log_partition_manifest(database_url: str | None, run_id: str, rows: list[dict[str, Any]]) -> None:
+def log_partition_manifest(database_url: str | None, run_id: str, rows: list[dict[str, Any]], *, strict: bool = False) -> None:
     if not database_url or not rows:
+        if strict and not database_url:
+            raise RuntimeError("DATABASE_URL is required to persist partition manifest")
         return
     try:
         import psycopg
@@ -341,8 +368,8 @@ def log_partition_manifest(database_url: str | None, run_id: str, rows: list[dic
                         {**row, "run_id": run_id},
                     )
             conn.commit()
-    except Exception:
-        return
+    except Exception as exc:
+        _warn_or_raise(f"failed to persist partition manifest: {exc}", strict)
 
 
 def schema_metadata() -> dict[str, str]:

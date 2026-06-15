@@ -8,6 +8,28 @@ from .control_plane import _safe_execute
 from .mart_dependencies import ALL_MARTS, marts_for_tables
 
 
+def _has_concurrent_index(cur, mart_name: str) -> bool:
+    schema, relation = mart_name.split(".", 1)
+    cur.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_index i ON i.indrelid = c.oid
+            WHERE n.nspname = %(schema)s
+              AND c.relname = %(relation)s
+              AND i.indisunique
+              AND i.indisvalid
+              AND i.indpred IS NULL
+              AND i.indexprs IS NULL
+        ) AS ok
+        """,
+        {"schema": schema, "relation": relation},
+    )
+    return bool(cur.fetchone()["ok"])
+
+
 def _refresh_one(database_url: str, mart_name: str, run_id: str | None, strategy: str) -> None:
     import psycopg
     from psycopg.rows import dict_row
@@ -16,13 +38,24 @@ def _refresh_one(database_url: str, mart_name: str, run_id: str | None, strategy
     status = "COMPLETED"
     error = None
     rows_after = None
+    refresh_strategy = strategy
     try:
-        with psycopg.connect(database_url, row_factory=dict_row) as conn:
+        with psycopg.connect(database_url, row_factory=dict_row, autocommit=True) as conn:
             with conn.cursor() as cur:
-                cur.execute(f"REFRESH MATERIALIZED VIEW {mart_name}")
+                can_concurrent = _has_concurrent_index(cur, mart_name)
+                if can_concurrent:
+                    try:
+                        cur.execute(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {mart_name}")
+                        refresh_strategy = "concurrent" if strategy == "full" else f"{strategy}:concurrent"
+                    except Exception as exc:
+                        error = f"concurrent refresh failed, fallback normal: {exc}"
+                        cur.execute(f"REFRESH MATERIALIZED VIEW {mart_name}")
+                        refresh_strategy = "fallback"
+                else:
+                    cur.execute(f"REFRESH MATERIALIZED VIEW {mart_name}")
+                    refresh_strategy = "normal" if strategy == "full" else f"{strategy}:normal"
                 cur.execute(f"SELECT COUNT(*) AS count FROM {mart_name}")
                 rows_after = int(cur.fetchone()["count"])
-            conn.commit()
     except Exception as exc:
         status = "FAILED"
         error = str(exc)
@@ -43,7 +76,7 @@ def _refresh_one(database_url: str, mart_name: str, run_id: str | None, strategy
                 {
                     "run_id": run_id,
                     "mart_name": mart_name,
-                    "strategy": strategy,
+                    "strategy": refresh_strategy,
                     "status": status,
                     "duration_ms": int((time.perf_counter() - started) * 1000),
                     "rows_after": rows_after,

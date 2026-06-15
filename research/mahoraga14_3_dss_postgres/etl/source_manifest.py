@@ -308,5 +308,5 @@ def write_manifest_report(entries: list[SourceManifestEntry], diff: SourceDiff, 
     return write_control_json(paths, f"source_manifest_{run_id}.json", payload)
 
 
-def persist_manifest(database_url: str | None, entries: list[SourceManifestEntry], run_id: str) -> None:
-    upsert_source_manifest(database_url, entries, run_id)
+def persist_manifest(database_url: str | None, entries: list[SourceManifestEntry], run_id: str, *, strict: bool = False) -> None:
+    upsert_source_manifest(database_url, entries, run_id, strict=strict)

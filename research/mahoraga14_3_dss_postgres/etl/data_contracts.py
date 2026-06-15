@@ -162,5 +162,5 @@ def write_contract_report(results: list[ContractResult], run_id: str, paths: Dss
     return target
 
 
-def persist_contract_results(database_url: str | None, run_id: str, results: list[ContractResult]) -> None:
-    log_data_quality(database_url, run_id, results)
+def persist_contract_results(database_url: str | None, run_id: str, results: list[ContractResult], *, strict: bool = False) -> None:
+    log_data_quality(database_url, run_id, results, strict=strict)

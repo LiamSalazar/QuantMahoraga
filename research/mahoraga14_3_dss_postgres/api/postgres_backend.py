@@ -734,7 +734,34 @@ class PostgresBackend:
             ORDER BY query_count DESC NULLS LAST
             """
         )["rows"]
-        return {"row_counts": counts, "query_performance": perf, "source_usage": source_usage}
+        try:
+            active = self._query(
+                """
+                SELECT active_run_id, activated_at, status
+                FROM oltp.active_dss_run
+                WHERE singleton_key
+                """
+            )["rows"]
+        except Exception:
+            active = []
+        try:
+            invalidations = self._query(
+                """
+                SELECT run_id, endpoint_pattern, reason, invalidated_at
+                FROM oltp.cache_invalidation_log
+                ORDER BY invalidated_at DESC
+                LIMIT 50
+                """
+            )["rows"]
+        except Exception:
+            invalidations = []
+        return {
+            "row_counts": counts,
+            "query_performance": perf,
+            "source_usage": source_usage,
+            "active_run": active[0] if active else None,
+            "cache_invalidation_plan": invalidations,
+        }
 
     def slice_query(self, dimensions, measure, operation, candidate_id, fold, universe_id, module, ticker, regime, horizon, start_date, end_date, limit=500):
         dim_sql = ", ".join(dimensions)

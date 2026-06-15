@@ -1,0 +1,243 @@
+{
+  "run_id": "dss_20260615T151258Z",
+  "generated_at": "2026-06-15T15:12:58.784874+00:00",
+  "passed": true,
+  "results": [
+    {
+      "table_name": "fact_outcome",
+      "passed": true,
+      "error_count": 0,
+      "warning_count": 0,
+      "checks": [
+        {
+          "check_name": "required_columns_present",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": [],
+          "expected_value": "[]",
+          "details": {
+            "required": [
+              "decision_date",
+              "candidate_id",
+              "universe_id",
+              "fold",
+              "horizon",
+              "realized_return",
+              "run_id",
+              "demo_mode"
+            ]
+          }
+        },
+        {
+          "check_name": "decision_date_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        },
+        {
+          "check_name": "candidate_id_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        },
+        {
+          "check_name": "universe_id_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        },
+        {
+          "check_name": "fold_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        },
+        {
+          "check_name": "horizon_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        },
+        {
+          "check_name": "run_id_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        },
+        {
+          "check_name": "horizon_allowed_values",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {
+            "allowed": [
+              1,
+              5,
+              20,
+              60
+            ]
+          }
+        },
+        {
+          "check_name": "fold_allowed_values",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {
+            "allowed": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          }
+        },
+        {
+          "check_name": "duplicate_grain_check",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {
+            "grain": [
+              "decision_date",
+              "candidate_id",
+              "universe_id",
+              "fold",
+              "horizon",
+              "run_id"
+            ]
+          }
+        },
+        {
+          "check_name": "demo_mode_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        }
+      ]
+    },
+    {
+      "table_name": "fact_decision_state",
+      "passed": true,
+      "error_count": 0,
+      "warning_count": 0,
+      "checks": [
+        {
+          "check_name": "required_columns_present",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": [],
+          "expected_value": "[]",
+          "details": {
+            "required": [
+              "date_value",
+              "candidate_id",
+              "universe_id",
+              "fold",
+              "run_id",
+              "demo_mode"
+            ]
+          }
+        },
+        {
+          "check_name": "date_value_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        },
+        {
+          "check_name": "candidate_id_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        },
+        {
+          "check_name": "universe_id_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        },
+        {
+          "check_name": "fold_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        },
+        {
+          "check_name": "run_id_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        },
+        {
+          "check_name": "fold_allowed_values",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {
+            "allowed": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          }
+        },
+        {
+          "check_name": "duplicate_grain_check",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {
+            "grain": [
+              "date_value",
+              "candidate_id",
+              "universe_id",
+              "fold",
+              "run_id"
+            ]
+          }
+        },
+        {
+          "check_name": "demo_mode_not_null",
+          "status": "PASS",
+          "severity": "ERROR",
+          "observed_value": 0,
+          "expected_value": 0,
+          "details": {}
+        }
+      ]
+    }
+  ]
+}

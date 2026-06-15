@@ -53,6 +53,12 @@ Run adaptive execution:
 python -m etl.run_adaptive --strategy auto
 ```
 
+Maintain pending outcome state:
+
+```bash
+python -m etl.run_adaptive --strategy pending-outcomes
+```
+
 Full refresh remains the fallback when no previous manifest exists, when a
 large portion of rows changed, or when the affected tables are not supported by
 the incremental partition loader. Incremental partition refresh is currently
@@ -66,6 +72,12 @@ python -m etl.refresh_views --strategy dependency --changed-tables fact_outcome,
 ```
 
 Operational reports are written to `outputs/control/`.
+
+Validate the scalable layer:
+
+```bash
+make validate-scalable
+```
 
 ## Engineering Benchmarks
 

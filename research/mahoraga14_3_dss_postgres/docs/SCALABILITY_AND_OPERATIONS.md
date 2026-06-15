@@ -66,6 +66,7 @@ When Postgres is available, the latest manifest is upserted into
 - strategy
 - reason
 - estimated rows
+- estimation source
 - scale class
 - parallelism
 - changed sources
@@ -84,6 +85,8 @@ Rules are intentionally conservative:
 - medium/large data prefers partition refresh when change ratio is bounded;
 - fact-specific changes map to dependent marts;
 - unsupported incremental tables fall back to full refresh with a written reason.
+- if partitions cannot be inferred safely, the table is marked `ALL`; broad
+  `ALL` replacement is accepted only for safe routes such as `fact_whatif`.
 
 Dry run:
 
@@ -99,11 +102,11 @@ outputs/control/execution_plan_<run_id>.json
 
 ## Incremental Pipeline
 
-`etl/incremental.py` implements real partition replacement for a safe subset of
-facts using:
+`etl/incremental.py` implements real partition replacement for supported facts
+using:
 
-1. rebuild staged Parquet for the current artifacts;
-2. derive logical partitions from the staged frame;
+1. build only selected facts where a safe builder exists;
+2. derive logical partitions from the plan;
 3. `DELETE` only the affected logical partition in Postgres;
 4. `COPY` replacement rows from Parquet/CSV staging;
 5. `ANALYZE` affected tables;
@@ -121,6 +124,9 @@ Supported logical partitions:
 
 If the planner cannot prove that all affected tables are supported, adaptive
 execution falls back to full refresh. This protects official DSS results.
+
+Detailed behavior is documented in
+[`INCREMENTAL_PIPELINE.md`](INCREMENTAL_PIPELINE.md).
 
 ## Partitioned Parquet
 
@@ -192,10 +198,11 @@ log.
 
 ## Publish And Rollback
 
-The DSS does not currently filter by active run id, so publish is deliberately
-lightweight. Successful runs insert `oltp.publish_log`; failed validation does
-not publish or invalidate cache. `previous_active_run_id` gives a rollback
-anchor for future active-run gating without changing existing endpoints now.
+Successful runs insert `oltp.publish_log` and update the single-row
+`oltp.active_dss_run` marker. Failed validation does not publish or invalidate
+cache. The DSS does not yet force every query through active-run filtering,
+because doing so would change a broad read contract; the marker is operational
+state for reports, cache keys, and future active-run gating.
 
 ## Pending Outcomes
 
@@ -313,6 +320,7 @@ Implemented now:
 - dependency-based mart refresh;
 - publish and cache invalidation logs;
 - pending outcomes table;
+- active DSS run marker;
 - benchmark/query/load-test scripts;
 - domain-aware temperature metadata.
 

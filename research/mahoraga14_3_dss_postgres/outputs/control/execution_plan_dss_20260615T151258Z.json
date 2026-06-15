@@ -1,0 +1,39 @@
+{
+  "strategy": "pending_outcomes",
+  "reason": "Pending-outcomes maintenance explicitly requested.",
+  "estimated_rows": 496967,
+  "estimation_source": "latest_pipeline_summary.total_rows_written",
+  "scale_class": "small",
+  "parallelism": 4,
+  "changed_sources": [],
+  "affected_tables": [
+    "fact_outcome"
+  ],
+  "affected_partitions": {
+    "fact_outcome": [
+      "ALL"
+    ]
+  },
+  "facts_to_build": [
+    "fact_outcome"
+  ],
+  "dimensions_to_build": [],
+  "marts_to_refresh": [
+    "mart.mv_performance_by_fold",
+    "mart.mv_decision_outcome",
+    "mart.mv_module_effectiveness",
+    "mart.mv_decision_replay"
+  ],
+  "cache_to_invalidate": [
+    "/decision/replay",
+    "/fold/performance",
+    "/module/effectiveness",
+    "/research/cohorts",
+    "/research/decision-casebook",
+    "/research/distributions",
+    "/research/olap-preset"
+  ],
+  "validation_level": "strict",
+  "publish_mode": "direct",
+  "fallback_allowed": true
+}

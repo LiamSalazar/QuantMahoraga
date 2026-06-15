@@ -5,6 +5,7 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from typing import Any
 
 import polars as pl
 
@@ -120,19 +121,7 @@ def _effective_parallelism(requested: int | None = None) -> int:
 
 
 def _build_facts(sources: dict[str, pl.DataFrame], config: RuntimeConfig, fact_whatif: pl.DataFrame, parallelism: int) -> dict[str, pl.DataFrame]:
-    builders = {
-        "fact_market_bar": lambda: build_fact_market_bar(sources, config.run_id),
-        "fact_signal_daily": lambda: build_fact_signal_daily(sources, config.run_id),
-        "fact_decision_state": lambda: build_fact_decision_state(sources, config.run_id),
-        "fact_position_daily": lambda: build_fact_position_daily(sources, config.run_id),
-        "fact_module_trace": lambda: build_fact_module_trace(sources, config.run_id),
-        "fact_outcome": lambda: build_fact_outcome(sources, config.run_id),
-        "fact_candidate_metric": lambda: build_fact_candidate_metric(sources, config.run_id),
-        "fact_robustness_surface": lambda: build_fact_robustness_surface(sources, config.run_id),
-        "fact_cost_sensitivity": lambda: build_fact_cost_sensitivity(sources, config.run_id),
-        "fact_universe_sensitivity": lambda: build_fact_universe_sensitivity(sources, config.run_id),
-        "fact_path_recursive": lambda: build_fact_path_recursive(sources, config.run_id),
-    }
+    builders = _fact_builders(sources, config, fact_whatif)
     if parallelism <= 1:
         facts = {name: build() for name, build in builders.items()}
     else:
@@ -144,6 +133,23 @@ def _build_facts(sources: dict[str, pl.DataFrame], config: RuntimeConfig, fact_w
         facts = {name: facts[name] for name in builders}
     facts["fact_whatif"] = fact_whatif
     return facts
+
+
+def _fact_builders(sources: dict[str, pl.DataFrame], config: RuntimeConfig, fact_whatif: pl.DataFrame) -> dict[str, Any]:
+    return {
+        "fact_market_bar": lambda: build_fact_market_bar(sources, config.run_id),
+        "fact_signal_daily": lambda: build_fact_signal_daily(sources, config.run_id),
+        "fact_decision_state": lambda: build_fact_decision_state(sources, config.run_id),
+        "fact_position_daily": lambda: build_fact_position_daily(sources, config.run_id),
+        "fact_module_trace": lambda: build_fact_module_trace(sources, config.run_id),
+        "fact_outcome": lambda: build_fact_outcome(sources, config.run_id),
+        "fact_candidate_metric": lambda: build_fact_candidate_metric(sources, config.run_id),
+        "fact_robustness_surface": lambda: build_fact_robustness_surface(sources, config.run_id),
+        "fact_cost_sensitivity": lambda: build_fact_cost_sensitivity(sources, config.run_id),
+        "fact_universe_sensitivity": lambda: build_fact_universe_sensitivity(sources, config.run_id),
+        "fact_path_recursive": lambda: build_fact_path_recursive(sources, config.run_id),
+        "fact_whatif": lambda: fact_whatif,
+    }
 
 
 def build_all(config: RuntimeConfig, paths: DssPaths | None = None, parallelism: int | None = None) -> tuple[dict[str, pl.DataFrame], dict[str, int], dict]:
@@ -194,6 +200,53 @@ def build_all(config: RuntimeConfig, paths: DssPaths | None = None, parallelism:
     return tables, row_counts, summary
 
 
+def build_selected(
+    config: RuntimeConfig,
+    paths: DssPaths | None,
+    selected_tables: list[str],
+    selected_partitions: dict[str, list[str]] | None = None,
+    parallelism: int | None = None,
+) -> tuple[dict[str, pl.DataFrame], dict[str, int], dict, str | None]:
+    paths = ensure_output_dirs(paths or get_paths())
+    selected = [table for table in selected_tables if table != "all"]
+    if not selected:
+        return {}, {}, {"run_id": config.run_id, "total_rows_written": 0, "row_counts": {}}, None
+
+    sources = load_sources(paths)
+    fact_whatif = build_fact_whatif(sources, config) if "fact_whatif" in selected or any(table.startswith("dim_") for table in selected) else pl.DataFrame()
+    builders = _fact_builders(sources, config, fact_whatif)
+    unsupported = [table for table in selected if table not in builders]
+    if unsupported:
+        return {}, {}, {}, f"Selected build has no safe builder for: {', '.join(sorted(unsupported))}"
+
+    max_workers = _effective_parallelism(parallelism)
+    if max_workers <= 1 or len(selected) <= 1:
+        tables = {table: builders[table]() for table in selected}
+    else:
+        tables = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_table = {executor.submit(builders[table]): table for table in selected}
+            for future in as_completed(future_to_table):
+                tables[future_to_table[future]] = future.result()
+        tables = {table: tables[table] for table in selected}
+
+    row_counts = write_tables(tables, paths, config.run_id)
+    contract_results = validate_all_contracts(tables)
+    write_contract_report(contract_results, config.run_id, paths)
+    summary = {
+        "run_id": config.run_id,
+        "profile": config.profile,
+        "mode": config.mode,
+        "selected_tables": selected,
+        "selected_partitions": selected_partitions or {},
+        "total_rows_written": sum(row_counts.values()),
+        "row_counts": row_counts,
+        "data_contracts_passed": all(result.passed for result in contract_results),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return tables, row_counts, summary, None
+
+
 def run(config: RuntimeConfig, skip_postgres: bool = False, truncate: bool = False) -> dict:
     paths = ensure_output_dirs()
     database_url = config.database_url if config.mode == "postgres" and not skip_postgres else None
@@ -221,6 +274,9 @@ def run(config: RuntimeConfig, skip_postgres: bool = False, truncate: bool = Fal
         if database_url:
             contract_results = validate_all_contracts(tables)
             persist_contract_results(database_url, config.run_id, contract_results)
+            if any(not result.passed for result in contract_results):
+                finish_pipeline_run(database_url, run_id=config.run_id, status="FAILED_VALIDATION", validation_status="FAIL", published=False)
+                raise RuntimeError("Data contract validation failed; publish was blocked.")
             pending = detect_pending_outcomes(tables.get("fact_decision_state", pl.DataFrame()), tables.get("fact_outcome", pl.DataFrame()), config.run_id)
             persist_pending_outcomes(database_url, pending)
         if config.mode == "postgres" and not skip_postgres:
