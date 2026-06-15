@@ -88,6 +88,25 @@ The `pending-outcomes` maintenance strategy updates `oltp.pending_outcome` but
 does not publish a new active DSS run, because it does not load replacement fact
 rows.
 
+## Scale Validation Status
+
+The incremental/adaptive architecture was validated without changing the
+standard DSS contract. The standard Postgres pipeline, `validate_postgres`,
+`smoke_postgres`, and critical data contracts passed for the real DSS dataset.
+Those checks are separate from benchmark-only fixture validation.
+
+Scale fixture validation covered Parquet generation and row-count/read behavior:
+
+- 4M benchmark fixture: 4 Parquet files, 1,000,000 rows each, 4,000,000 rows
+  total, with manifest flags `benchmark_mode=true` and
+  `not_research_evidence=true`.
+- 40M benchmark fixture: `outputs/scale_fixtures/scale_40m`, generated in
+  approximately 1m11s, observed size around 42 MB, 40 Parquet files,
+  1,000,000 rows each, 40,000,000 rows total.
+
+The 4M and 40M fixtures are not quant evidence, were not loaded into the
+standard DSS, and must not be interpreted as official Mahoraga results.
+
 ## Current Limits
 
 - Materialized view refresh is concurrent only where Postgres exposes a valid
@@ -97,3 +116,44 @@ rows.
 - Active-run gating is prepared but not enforced across all API queries.
 - Cache invalidation is logged as a safe hook; no risky stale-response cache is
   enabled by default.
+
+## Operational Commands
+
+Quick validation environment:
+
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres
+source .venv/bin/activate
+
+export DSS_BACKEND=postgres
+export DATABASE_URL="postgresql:///mahoraga_dss"
+```
+
+Backend/API:
+
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres
+source .venv/bin/activate
+
+export DSS_BACKEND=postgres
+export DATABASE_URL="postgresql:///mahoraga_dss"
+
+uvicorn api.main:app --reload --host 127.0.0.1 --port 8002
+```
+
+Frontend:
+
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres/frontend
+
+npm install
+npm run build
+
+VITE_API_BASE="http://127.0.0.1:8002" npm run dev
+```
+
+App URL:
+
+```text
+http://127.0.0.1:5174
+```

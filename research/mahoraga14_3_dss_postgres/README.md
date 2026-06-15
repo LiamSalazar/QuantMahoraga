@@ -573,6 +573,68 @@ Default local frontend URL:
 http://127.0.0.1:5174
 ```
 
+## Scale Validation Status
+
+The standard Postgres-backed DSS path was validated separately from benchmark
+fixtures. The standard pipeline completed with the existing DSS contract intact:
+`python -m etl.validate_postgres` passed, `python -m scripts.smoke_postgres`
+passed, critical data contracts were recorded with `status=PASS`, and the
+frontend-facing DSS tables, marts, metrics, and endpoints were not altered.
+
+Benchmark-only scale fixture validation is separate from quant evidence:
+
+- 4M fixture: 4 Parquet files were validated, each with 1,000,000 rows, for
+  4,000,000 total rows. Its manifest marks `benchmark_mode=true` and
+  `not_research_evidence=true`.
+- 40M fixture: `outputs/scale_fixtures/scale_40m` was generated successfully in
+  approximately 1m11s, with observed size around 42 MB. 40 Parquet files were
+  validated, each with 1,000,000 rows, for 40,000,000 total rows.
+
+The 4M and 40M fixtures are engineering benchmark fixtures only. They were not
+loaded into the standard DSS, did not contaminate official research evidence,
+and must not be presented as Mahoraga quant results.
+
+## Operational Commands
+
+Quick validation environment:
+
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres
+source .venv/bin/activate
+
+export DSS_BACKEND=postgres
+export DATABASE_URL="postgresql:///mahoraga_dss"
+```
+
+Backend/API:
+
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres
+source .venv/bin/activate
+
+export DSS_BACKEND=postgres
+export DATABASE_URL="postgresql:///mahoraga_dss"
+
+uvicorn api.main:app --reload --host 127.0.0.1 --port 8002
+```
+
+Frontend:
+
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres/frontend
+
+npm install
+npm run build
+
+VITE_API_BASE="http://127.0.0.1:8002" npm run dev
+```
+
+App URL:
+
+```text
+http://127.0.0.1:5174
+```
+
 Windows without Postgres:
 
 ```powershell

@@ -299,6 +299,84 @@ python -m scripts.generate_scale_fixture --target-rows 40000000
 They write under `outputs/scale_fixtures/`, include `benchmark_mode=true`, and
 must not be loaded into the standard DSS or presented as quant evidence.
 
+## Scale Validation Status
+
+The standard DSS and the scale fixtures were validated as separate concerns.
+
+Standard Postgres/DSS validation:
+
+- The standard Postgres pipeline was validated with the existing DSS behavior
+  unchanged.
+- `python -m etl.validate_postgres` passed.
+- `python -m scripts.smoke_postgres` passed.
+- Critical data contracts were persisted with `status=PASS`.
+- Existing frontend-facing tables, marts, metrics, and API semantics were not
+  changed by the scale validation.
+
+Benchmark-only 4M fixture validation:
+
+- 4 Parquet files were validated.
+- Each file contains 1,000,000 rows.
+- Total validated rows: 4,000,000.
+- The manifest marks `benchmark_mode=true`.
+- The manifest marks `not_research_evidence=true`.
+- The fixture did not contaminate the standard DSS or quant evidence.
+
+Benchmark-only 40M fixture validation:
+
+- `outputs/scale_fixtures/scale_40m` was generated successfully.
+- Observed generation time was approximately 1m11s.
+- Observed fixture size was approximately 42 MB.
+- 40 Parquet files were validated.
+- Each file contains 1,000,000 rows.
+- Total validated rows: 40,000,000.
+- The fixture did not contaminate the standard DSS or quant evidence.
+
+These fixtures validate Parquet generation and row-count/read behavior for
+engineering scale tests. They are not Mahoraga research evidence and are not
+official model results.
+
+## Operational Commands
+
+Quick validation environment:
+
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres
+source .venv/bin/activate
+
+export DSS_BACKEND=postgres
+export DATABASE_URL="postgresql:///mahoraga_dss"
+```
+
+Backend/API:
+
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres
+source .venv/bin/activate
+
+export DSS_BACKEND=postgres
+export DATABASE_URL="postgresql:///mahoraga_dss"
+
+uvicorn api.main:app --reload --host 127.0.0.1 --port 8002
+```
+
+Frontend:
+
+```bash
+cd ~/QuantMahoraga/research/mahoraga14_3_dss_postgres/frontend
+
+npm install
+npm run build
+
+VITE_API_BASE="http://127.0.0.1:8002" npm run dev
+```
+
+App URL:
+
+```text
+http://127.0.0.1:5174
+```
+
 ## Scaling Path
 
 At around 400k-500k rows, full refresh remains acceptable. At millions of rows,

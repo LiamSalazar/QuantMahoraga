@@ -1,0 +1,18 @@
+{
+  "strategy": "no_data_refresh",
+  "reason": "Incremental refresh requested, but no data-bearing source changed.",
+  "estimated_rows": 496967,
+  "estimation_source": "latest_pipeline_summary.total_rows_written",
+  "scale_class": "small",
+  "parallelism": 4,
+  "changed_sources": [],
+  "affected_tables": [],
+  "affected_partitions": {},
+  "facts_to_build": [],
+  "dimensions_to_build": [],
+  "marts_to_refresh": [],
+  "cache_to_invalidate": [],
+  "validation_level": "standard",
+  "publish_mode": "direct",
+  "fallback_allowed": true
+}

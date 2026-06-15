@@ -1,0 +1,8 @@
+{
+    "benchmark_mode": true,
+    "target_rows": 40000000,
+    "rows_written": 40000000,
+    "parts": 40,
+    "not_research_evidence": true,
+    "usage": "Engineering throughput/query benchmark only. Do not load into the standard DSS pipeline."
+}
