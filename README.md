@@ -1,6 +1,7 @@
 # Mahoraga
 
 Mahoraga is a modular quantitative research system for long-only equity portfolio construction. It focuses on technology and growth-oriented universes and combines interpretable alpha signals, participation-aware capital allocation, structural risk filters, walk-forward validation, robustness testing, and decision-level audit artifacts.
+More auditory results can be found in the research directory.
 
 The repository is organized around one frozen official baseline:
 
